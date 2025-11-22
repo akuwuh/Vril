@@ -33,7 +33,7 @@ export function Navbar() {
     <header className="border-b-2 border-black flex-shrink-0 bg-background">
       <div className="container mx-auto px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Link href="/">
+          <Link href="/product">
             <Boxes className="w-12 h-12" />
           </Link>
         </div>
