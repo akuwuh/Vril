@@ -191,8 +191,8 @@ export default function Home() {
                           e.stopPropagation();
                           removeImage(index);
                         }}
-                        className="absolute -top-1.5 -right-1.5 bg-destructive text-destructive-foreground rounded-full p-0.5 
-                                   opacity-0 group-hover/image:opacity-100 transition-opacity shadow-sm cursor-pointer"
+                        className="absolute -top-2 -right-2 bg-background text-foreground border-2 border-black rounded-full p-1 
+                                   opacity-0 group-hover/image:opacity-100 transition-all duration-200 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] cursor-pointer hover:scale-110 active:scale-95"
                       >
                         <X className="w-3 h-3" />
                       </button>
@@ -212,7 +212,7 @@ export default function Home() {
               />
             </div>
             
-            <div className="flex items-center justify-between p-3 border-t-2 border-black bg-muted/30">
+            <div className="flex items-center justify-between p-3 border-t-2 border-black bg-muted/30 cursor-default">
               <div className="flex gap-2">
                 <input 
                   type="file" 
