@@ -171,7 +171,7 @@ export default function Home() {
             relative bg-background rounded-xl border-2 border-black overflow-hidden cursor-pointer
             transition-all duration-300 ease-out
             ${isFocused 
-              ? "scale-[1.01] shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] -translate-y-[2px] -translate-x-[2px]" 
+              ? "scale-[1.005] shadow-[5px_5px_0px_0px_rgba(0,0,0,1)] -translate-y-[1px] -translate-x-[1px]" 
               : "scale-100 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]"}
           `}
           onClick={() => document.querySelector<HTMLTextAreaElement>('textarea')?.focus()}
