@@ -124,7 +124,7 @@ export default function Home() {
               style={{
                 strokeDasharray: pathLengths[i] || 0,
                 strokeDashoffset: isLoaded ? 0 : (pathLengths[i] || 0),
-                transition: isLoaded ? "stroke-dashoffset 2s cubic-bezier(0.2, 0, 0.2, 1)" : "none",
+                transition: isLoaded ? "stroke-dashoffset 2s cubic-bezier(0.6, 0, 0.2, 1)" : "none",
                 opacity: pathLengths.length > 0 ? 1 : 0
               }}
             />
