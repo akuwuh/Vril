@@ -124,7 +124,7 @@ export default function Home() {
               style={{
                 strokeDasharray: pathLengths[i] || 0,
                 strokeDashoffset: isLoaded ? 0 : (pathLengths[i] || 0),
-                transition: isLoaded ? "stroke-dashoffset 1.5s cubic-bezier(0.2, 0, 0.2, 1) 0.5s" : "none",
+                transition: isLoaded ? "stroke-dashoffset 0.8s cubic-bezier(0.2, 0, 0.1, 1) 0.3s" : "none",
                 opacity: pathLengths.length > 0 ? 1 : 0
               }}
             />
@@ -168,10 +168,14 @@ export default function Home() {
           `}
         >
           <div className={`
-            relative bg-background rounded-xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] overflow-hidden
-            transition-all duration-300 ease-in-out
-            ${isFocused ? "scale-[1.02]" : "scale-100"}
-          `}>
+            relative bg-background rounded-xl border-2 border-black overflow-hidden cursor-pointer
+            transition-all duration-300 ease-out
+            ${isFocused 
+              ? "scale-[1.01] shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] -translate-y-[2px] -translate-x-[2px]" 
+              : "scale-100 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]"}
+          `}
+          onClick={() => document.querySelector<HTMLTextAreaElement>('textarea')?.focus()}
+          >
             <div className="p-4 pb-0">
               {images.length > 0 && (
                 <div className="flex flex-wrap gap-2 mb-2">
@@ -183,9 +187,12 @@ export default function Home() {
                         className="h-16 w-16 object-cover rounded-md border border-black/20"
                       />
                       <button
-                        onClick={() => removeImage(index)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeImage(index);
+                        }}
                         className="absolute -top-1.5 -right-1.5 bg-destructive text-destructive-foreground rounded-full p-0.5 
-                                   opacity-0 group-hover/image:opacity-100 transition-opacity shadow-sm"
+                                   opacity-0 group-hover/image:opacity-100 transition-opacity shadow-sm cursor-pointer"
                       >
                         <X className="w-3 h-3" />
                       </button>
@@ -217,19 +224,25 @@ export default function Home() {
                 <Button 
                   variant="outline" 
                   size="icon" 
-                  className="h-9 w-9 rounded-lg border-black hover:bg-background" 
+                  className="h-9 w-9 rounded-lg border-black hover:bg-background cursor-pointer" 
                   title="Upload reference image"
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    fileInputRef.current?.click();
+                  }}
                 >
                   <Upload className="w-4 h-4" />
                 </Button>
               </div>
               
               <Button 
-                onClick={handleStart}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleStart();
+                }}
                 disabled={!prompt.trim()}
                 className={`
-                  transition-all duration-300 
+                  transition-all duration-300 cursor-pointer
                   ${prompt.trim() ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}
                 `}
               >
@@ -250,7 +263,7 @@ export default function Home() {
               key={i}
               onClick={() => setPrompt(suggestion.text)}
               className="flex items-center gap-2 px-4 py-2 text-sm bg-background border-2 border-black rounded-full 
-                         hover:bg-secondary hover:scale-105 active:scale-95 transition-all duration-200 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+                         hover:bg-secondary hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] cursor-pointer"
             >
               <suggestion.icon className="w-4 h-4" />
               {suggestion.text}
