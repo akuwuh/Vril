@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowRight, Sparkles, Upload, Image as ImageIcon, Box, Boxes } from "lucide-react";
+import { ArrowRight, Sparkles, Upload, Image as ImageIcon, Box, Boxes, X } from "lucide-react";
 
 export default function Home() {
   const router = useRouter();
@@ -13,15 +13,19 @@ export default function Home() {
   const [isLoaded, setIsLoaded] = useState(false);
   const [pathLengths, setPathLengths] = useState<number[]>([]);
   const pathRefs = useRef<(SVGPathElement | null)[]>([]);
+  const [images, setImages] = useState<string[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     // Measure all paths
-    const lengths = pathRefs.current.map(path => path?.getTotalLength() || 0);
-    setPathLengths(lengths);
-
-    // Start animation almost immediately
-    const timer = setTimeout(() => setIsLoaded(true), 50);
-    return () => clearTimeout(timer);
+    if (pathRefs.current.length > 0) {
+      const lengths = pathRefs.current.map(path => path?.getTotalLength() || 0);
+      setPathLengths(lengths);
+      
+      // Only start animation after we've measured
+      const timer = setTimeout(() => setIsLoaded(true), 100);
+      return () => clearTimeout(timer);
+    }
   }, []);
 
   const handleStart = () => {
@@ -34,6 +38,43 @@ export default function Home() {
       e.preventDefault();
       handleStart();
     }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          if (e.target?.result) {
+            setImages(prev => [...prev, e.target!.result as string]);
+          }
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData.items;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1) {
+        const file = items[i].getAsFile();
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            if (e.target?.result) {
+              setImages(prev => [...prev, e.target!.result as string]);
+            }
+          };
+          reader.readAsDataURL(file);
+        }
+      }
+    }
+  };
+
+  const removeImage = (index: number) => {
+    setImages(prev => prev.filter((_, i) => i !== index));
   };
 
   const suggestions = [
@@ -64,7 +105,7 @@ export default function Home() {
       <div className={`
         absolute inset-0 flex items-center justify-center z-0 pointer-events-none
         transition-opacity duration-700 ease-out
-        ${isLoaded ? "opacity-10" : "opacity-0"}
+        ${isLoaded ? "opacity-100" : "opacity-0"}
       `}>
         <svg 
           viewBox="0 0 24 24" 
@@ -81,9 +122,10 @@ export default function Home() {
               ref={el => { pathRefs.current[i] = el; }}
               d={d}
               style={{
-                strokeDasharray: pathLengths[i] || 100,
-                strokeDashoffset: isLoaded ? 0 : (pathLengths[i] || 100),
-                transition: "stroke-dashoffset 2s cubic-bezier(0.2, 0, 0.2, 1)",
+                strokeDasharray: pathLengths[i] || 0,
+                strokeDashoffset: isLoaded ? 0 : (pathLengths[i] || 0),
+                transition: isLoaded ? "stroke-dashoffset 2s cubic-bezier(0.2, 0, 0.2, 1)" : "none",
+                opacity: pathLengths.length > 0 ? 1 : 0
               }}
             />
           ))}
@@ -130,19 +172,55 @@ export default function Home() {
             transition-all duration-300 ease-in-out
             ${isFocused ? "scale-[1.02]" : "scale-100"}
           `}>
-            <Textarea
-              placeholder="I want a hexagonal box for organic tea..."
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              onKeyDown={handleKeyDown}
-              onFocus={() => setIsFocused(true)}
-              onBlur={() => setIsFocused(false)}
-              className="min-h-[120px] w-full resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 p-4 text-lg bg-transparent"
-            />
+            <div className="p-4 pb-0">
+              {images.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {images.map((img, index) => (
+                    <div key={index} className="relative group/image">
+                      <img 
+                        src={img} 
+                        alt={`Attachment ${index + 1}`} 
+                        className="h-16 w-16 object-cover rounded-md border border-black/20"
+                      />
+                      <button
+                        onClick={() => removeImage(index)}
+                        className="absolute -top-1.5 -right-1.5 bg-destructive text-destructive-foreground rounded-full p-0.5 
+                                   opacity-0 group-hover/image:opacity-100 transition-opacity shadow-sm"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <Textarea
+                placeholder="I want a hexagonal box for organic tea..."
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
+                onFocus={() => setIsFocused(true)}
+                onBlur={() => setIsFocused(false)}
+                className="min-h-[100px] w-full resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 p-0 text-lg bg-transparent shadow-none"
+              />
+            </div>
             
             <div className="flex items-center justify-between p-3 border-t-2 border-black bg-muted/30">
               <div className="flex gap-2">
-                <Button variant="outline" size="icon" className="h-9 w-9 rounded-lg border-black hover:bg-background" title="Upload reference image">
+                <input 
+                  type="file" 
+                  ref={fileInputRef}
+                  onChange={handleFileSelect}
+                  className="hidden" 
+                  accept="image/*"
+                />
+                <Button 
+                  variant="outline" 
+                  size="icon" 
+                  className="h-9 w-9 rounded-lg border-black hover:bg-background" 
+                  title="Upload reference image"
+                  onClick={() => fileInputRef.current?.click()}
+                >
                   <Upload className="w-4 h-4" />
                 </Button>
               </div>
