@@ -1,8 +1,8 @@
 "use client";
 
-import { useRef, useState, Suspense } from "react";
+import { useRef, useState, Suspense, useEffect } from "react";
 import { Canvas } from "@react-three/fiber";
-import { OrbitControls, Environment } from "@react-three/drei";
+import { OrbitControls, Environment, useGLTF } from "@react-three/drei";
 import { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import * as THREE from "three";
 
@@ -10,28 +10,128 @@ interface ModelViewerProps {
   modelUrl?: string;
   isLoading?: boolean;
   error?: string | null;
+  onModelLoaded?: (url: string) => void;
+  selectedColor?: string;
+  selectedTexture?: string;
+  lightingMode?: "studio" | "sunset" | "warehouse" | "forest";
+  wireframe?: boolean;
+  zoomAction?: "in" | "out" | null;
+  autoRotate?: boolean;
 }
 
 function CubeModel({
   wireframe,
   showColor,
+  color,
+  texture,
 }: {
   wireframe: boolean;
   showColor: boolean;
+  color?: string;
+  texture?: string;
 }) {
-  // Simple cube mesh
+  const materialColor = color || "#60a5fa";
+  const roughness = texture === "glossy" ? 0.1 : 0.7;
+  const metalness = texture === "glossy" ? 0.8 : 0.3;
+
+  // Simple cube mesh (fallback when no model URL provided)
   return (
     <mesh>
       <boxGeometry args={[2, 2, 2]} />
       <meshStandardMaterial
-        color={showColor ? "#67B68B" : "#67B68B"}
+        color={showColor ? materialColor : materialColor}
         wireframe={wireframe}
-        emissive={wireframe ? "#67B68B" : undefined}
+        emissive={wireframe ? materialColor : undefined}
         emissiveIntensity={wireframe ? 0.2 : 0}
-        metalness={0.3}
-        roughness={0.7}
+        metalness={metalness}
+        roughness={roughness}
       />
     </mesh>
+  );
+}
+
+function ModelLoader({
+  url,
+  wireframe,
+  showColor,
+}: {
+  url: string;
+  wireframe: boolean;
+  showColor: boolean;
+}) {
+  const { scene, error } = useGLTF(url);
+
+  // If there's an error loading the model, throw it so Suspense/ErrorBoundary can catch it
+  if (error) {
+    throw error;
+  }
+
+  // Clone the scene to avoid modifying the original
+  const clonedScene = scene.clone();
+
+  // Apply wireframe/texture mode to all meshes in the scene
+  clonedScene.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      if (child.material) {
+        // Handle both single material and material arrays
+        const materials = Array.isArray(child.material) ? child.material : [child.material];
+
+        materials.forEach((material) => {
+          if (material instanceof THREE.MeshStandardMaterial || material instanceof THREE.MeshPhysicalMaterial) {
+            material.wireframe = wireframe;
+
+            if (wireframe) {
+              // Wireframe mode: emissive blue
+              material.emissive = new THREE.Color("#60a5fa");
+              material.emissiveIntensity = 0.2;
+              material.color = new THREE.Color("#60a5fa");
+            } else if (showColor) {
+              // Base texture mode: reset to original colors
+              material.emissive = new THREE.Color(0, 0, 0);
+              material.emissiveIntensity = 0;
+              // Keep original colors
+            } else {
+              // Default: blue tint
+              material.emissive = new THREE.Color("#60a5fa");
+              material.emissiveIntensity = 0.1;
+              material.color = new THREE.Color("#60a5fa");
+            }
+
+            material.needsUpdate = true;
+          }
+        });
+      }
+    }
+  });
+
+  return <primitive object={clonedScene} />;
+}
+
+function ModelLoaderWrapper({
+  url,
+  wireframe,
+  showColor,
+  onLoad,
+  onError,
+}: {
+  url: string;
+  wireframe: boolean;
+  showColor: boolean;
+  onLoad?: () => void;
+  onError?: (error: Error) => void;
+}) {
+  useEffect(() => {
+    onLoad?.();
+  }, [url, onLoad]);
+
+  return (
+    <Suspense fallback={<LoadingPlaceholder />}>
+      <ModelLoader
+        url={url}
+        wireframe={wireframe}
+        showColor={showColor}
+      />
+    </Suspense>
   );
 }
 
@@ -41,13 +141,13 @@ function LoadingPlaceholder() {
 
 function LoadingSkeleton() {
   return (
-    <div className="absolute inset-0 flex items-center justify-center bg-[#2A3038]">
+    <div className="absolute inset-0 flex items-center justify-center bg-gray-800">
       <div className="text-center">
         <div className="mb-4">
-          <div className="w-16 h-16 border-4 border-[#4ade80] border-t-transparent rounded-full animate-spin mx-auto"></div>
+          <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
         </div>
-        <p className="text-[#67B68B] text-lg font-semibold mb-2">
-          Generating 3D Model
+        <p className="text-blue-400 text-lg font-semibold mb-2">
+          Loading 3D Model
         </p>
         <p className="text-gray-400 text-sm">This may take a few moments...</p>
       </div>
@@ -57,7 +157,7 @@ function LoadingSkeleton() {
 
 function ErrorDisplay({ message }: { message: string }) {
   return (
-    <div className="absolute inset-0 flex items-center justify-center bg-[#2A3038]">
+    <div className="absolute inset-0 flex items-center justify-center bg-gray-800">
       <div className="text-center px-8">
         <div className="mb-4">
           <svg
@@ -85,76 +185,85 @@ export default function ModelViewer({
   modelUrl,
   isLoading,
   error,
+  onModelLoaded,
+  selectedColor,
+  selectedTexture,
+  lightingMode = "studio",
+  wireframe = false,
+  zoomAction,
+  autoRotate = true,
 }: ModelViewerProps) {
   const controlsRef = useRef<OrbitControlsImpl>(null);
   const [contrast, setContrast] = useState(3.0);
   const [exposure, setExposure] = useState(2.0);
-  const [wireframe, setWireframe] = useState(true); // Default: wireframe ON
-  const [showColor, setShowColor] = useState(false); // Default: Base Texture Mode OFF
-  const [autoRotate, setAutoRotate] = useState(true); // Default: auto-rotate ON
-  const [lightingMode, setLightingMode] = useState<"studio" | "sunset" | "warehouse" | "forest">("studio");
-  const [showLightingDropdown, setShowLightingDropdown] = useState(false);
+  const [showColor, setShowColor] = useState(true);
+  const [isModelLoading, setIsModelLoading] = useState(false);
+  const [modelLoadError, setModelLoadError] = useState<string | null>(null);
 
-  // Show loading skeleton while generating
-  if (isLoading) {
-    return (
-      <div className="bg-[#2A3038] border-[0.5px] border-[#67B68B] h-full min-h-[400px] relative">
-        <LoadingSkeleton />
-      </div>
-    );
-  }
+  // Handle zoom actions
+  useEffect(() => {
+    if (zoomAction && controlsRef.current) {
+      const currentDistance = controlsRef.current.getDistance();
+      let newDistance;
 
-  // Show error if generation failed
-  if (error) {
-    return (
-      <div className="bg-[#2A3038] border-[0.5px] border-[#67B68B] h-full min-h-[400px] relative">
-        <ErrorDisplay message={error} />
-      </div>
-    );
-  }
+      if (zoomAction === "in") {
+        newDistance = Math.max(currentDistance * 0.8, 2);
+      } else if (zoomAction === "out") {
+        newDistance = Math.min(currentDistance * 1.2, 10);
+      }
 
-  return (
-    <div className="bg-[#0a0e14] border-[0.5px] border-[#67B68B] w-full h-full relative overflow-hidden min-h-[600px]">
-      {/* Holographic corner accents */}
-      <div className="absolute top-0 left-0 w-20 h-20 border-t-2 border-l-2 border-[#67B68B] opacity-30" />
-      <div className="absolute top-0 right-0 w-20 h-20 border-t-2 border-r-2 border-[#67B68B] opacity-30" />
-      <div className="absolute bottom-0 left-0 w-20 h-20 border-b-2 border-l-2 border-[#67B68B] opacity-30" />
-      <div className="absolute bottom-0 right-0 w-20 h-20 border-b-2 border-r-2 border-[#67B68B] opacity-30" />
-      
-      {/* Scan line effect */}
-      <div 
-        className="absolute inset-0 pointer-events-none"
-        style={{
-          background: 'linear-gradient(0deg, transparent 0%, rgba(103, 182, 139, 0.03) 50%, transparent 100%)',
-          backgroundSize: '100% 4px',
-          animation: 'scan 8s linear infinite',
-        }}
-      />
-      
-      <style jsx>{`
-        @keyframes scan {
-          0% { transform: translateY(0); }
-          100% { transform: translateY(100%); }
-        }
-      `}</style>
+      if (newDistance) {
+        controlsRef.current.minDistance = newDistance;
+        controlsRef.current.maxDistance = newDistance;
+        controlsRef.current.update();
+
+        // Reset back to normal range after a short delay
+        setTimeout(() => {
+          if (controlsRef.current) {
+            controlsRef.current.minDistance = 2;
+            controlsRef.current.maxDistance = 10;
+          }
+        }, 100);
+      }
+    }
+  }, [zoomAction]);
+
+  // Effect to handle model loading states
+  useEffect(() => {
+    if (modelUrl) {
+      setIsModelLoading(true);
+      setModelLoadError(null);
+    }
+  }, [modelUrl]);
+
+  // Determine content to render
+  let content;
+  if (isLoading || (modelUrl && isModelLoading)) {
+    content = <LoadingSkeleton />;
+  } else if (error || modelLoadError) {
+    const errorMessage = modelLoadError || error || 'Failed to load model';
+    content = <ErrorDisplay message={errorMessage} />;
+  } else {
+    content = (
       <Canvas
         camera={{ position: [2, 1.5, 3.5], fov: 50 }}
         gl={{
           toneMapping: 2, // ACESFilmic tone mapping
           toneMappingExposure: exposure,
         }}
+        className="w-full h-full"
       >
-        {/* Terminal/Holographic background gradient */}
-        <color attach="background" args={["#0a0e14"]} />
-        
-        {/* Holographic grid effect */}
+        {/* Background color based on theme */}
+        <color attach="background" args={["hsl(var(--muted)/0.3)"]} />
+
+        {/* Subtle grid effect */}
         <mesh position={[0, 0, -10]} rotation={[-Math.PI / 2, 0, 0]}>
           <planeGeometry args={[50, 50, 20, 20]} />
-          <meshBasicMaterial 
-            color="#67B68B" 
-            wireframe 
-            transparent 
-            opacity={0.08}
+          <meshBasicMaterial
+            color="hsl(var(--muted-foreground))"
+            wireframe
+            transparent
+            opacity={0.05}
           />
         </mesh>
 
@@ -171,10 +280,28 @@ export default function ModelViewer({
           />
           <directionalLight position={[-5, 3, -5]} intensity={0.3 * contrast} />
 
-          <CubeModel
-            wireframe={wireframe}
-            showColor={showColor}
-          />
+          {modelUrl ? (
+            <ModelLoaderWrapper
+              url={modelUrl}
+              wireframe={wireframe}
+              showColor={showColor}
+              onLoad={() => {
+                setIsModelLoading(false);
+                setModelLoadError(null);
+              }}
+              onError={(error) => {
+                setIsModelLoading(false);
+                setModelLoadError(error.message);
+              }}
+            />
+          ) : (
+            <CubeModel
+              wireframe={wireframe}
+              showColor={showColor}
+              color={selectedColor}
+              texture={selectedTexture}
+            />
+          )}
 
           <OrbitControls
             ref={controlsRef}
@@ -187,287 +314,13 @@ export default function ModelViewer({
           />
         </Suspense>
       </Canvas>
+    );
+  }
 
-      {/* Top Controls Row */}
-      <div className="absolute top-4 left-4 flex gap-3">
-        {/* View Mode Selector */}
-        <div className="bg-[#161924] border-[0.5px] border-[#3a4560] rounded flex overflow-hidden">
-        {/* Base Texture Mode */}
-        <button
-          onClick={() => {
-            setShowColor(true);
-            setWireframe(false);
-          }}
-          className={`w-12 h-12 flex items-center justify-center transition-colors ${
-            showColor
-              ? "bg-[#67B68B] text-black"
-              : "bg-transparent text-[#67B68B] hover:bg-[#2A3142]"
-          }`}
-          title="Base Texture Mode"
-        >
-          <svg
-            className="w-5 h-5"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"
-            />
-          </svg>
-        </button>
-
-        {/* Divider */}
-        <div className="w-[1px] bg-[#3a4560]" />
-
-        {/* Wireframe Mode */}
-        <button
-          onClick={() => {
-            setWireframe(true);
-            setShowColor(false);
-          }}
-          className={`w-12 h-12 flex items-center justify-center transition-colors ${
-            wireframe
-              ? "bg-[#67B68B] text-black"
-              : "bg-transparent text-[#67B68B] hover:bg-[#2A3142]"
-          }`}
-          title="Wireframe Mode"
-        >
-          <svg
-            className="w-5 h-5"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M4 6h16M4 10h16M4 14h16M4 18h16"
-            />
-          </svg>
-        </button>
-        </div>
-        
-        {/* Lighting Mode Dropdown */}
-        <div className="relative">
-          <button
-            onClick={() => setShowLightingDropdown(!showLightingDropdown)}
-            className="bg-[#161924] border-[0.5px] border-[#3a4560] rounded px-3 h-12 flex items-center gap-2 text-[#67B68B] hover:bg-[#2A3142] transition-colors"
-          >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"
-              />
-            </svg>
-            <span className="text-sm capitalize">{lightingMode}</span>
-            <svg
-              className={`w-4 h-4 transition-transform ${showLightingDropdown ? 'rotate-180' : ''}`}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M19 9l-7 7-7-7"
-              />
-            </svg>
-          </button>
-          
-          {/* Dropdown Menu */}
-          {showLightingDropdown && (
-            <div className="absolute top-14 left-0 bg-[#161924] border-[0.5px] border-[#3a4560] rounded overflow-hidden z-10 min-w-[140px]">
-              {(['studio', 'sunset', 'warehouse', 'forest'] as const).map((mode) => (
-                <button
-                  key={mode}
-                  onClick={() => {
-                    setLightingMode(mode);
-                    setShowLightingDropdown(false);
-                  }}
-                  className={`w-full px-4 py-2.5 text-left text-sm capitalize transition-colors ${
-                    lightingMode === mode
-                      ? 'bg-[#67B68B] text-black'
-                      : 'text-[#67B68B] hover:bg-[#2A3142]'
-                  }`}
-                >
-                  {mode}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Vertical Control Stack - Right Side */}
-      <div className="absolute top-1/2 right-4 -translate-y-1/2 bg-[#2A3038] border-[0.5px] border-[#3a4560] rounded flex flex-col overflow-hidden">
-        {/* Reset Camera */}
-        <button
-          onClick={() => controlsRef.current?.reset()}
-          className="w-12 h-12 flex items-center justify-center text-[#67B68B] hover:bg-[#3a4560] transition-colors border-b border-[#3a4560]"
-          title="Reset Camera"
-        >
-          <svg
-            className="w-5 h-5"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-            />
-          </svg>
-        </button>
-
-        {/* Zoom In */}
-        <button
-          onClick={() => {
-            if (controlsRef.current) {
-              const camera = controlsRef.current.object;
-              camera.position.multiplyScalar(0.8);
-              controlsRef.current.update();
-            }
-          }}
-          className="w-12 h-12 flex items-center justify-center text-[#67B68B] hover:bg-[#3a4560] transition-colors border-b border-[#3a4560]"
-          title="Zoom In"
-        >
-          <svg
-            className="w-6 h-6"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <circle cx="11" cy="11" r="8" strokeWidth={2} />
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M21 21l-4.35-4.35M11 8v6m-3-3h6"
-            />
-          </svg>
-        </button>
-
-        {/* Zoom Out */}
-        <button
-          onClick={() => {
-            if (controlsRef.current) {
-              const camera = controlsRef.current.object;
-              camera.position.multiplyScalar(1.2);
-              controlsRef.current.update();
-            }
-          }}
-          className="w-12 h-12 flex items-center justify-center text-[#67B68B] hover:bg-[#3a4560] transition-colors border-b border-[#3a4560]"
-          title="Zoom Out"
-        >
-          <svg
-            className="w-6 h-6"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <circle cx="11" cy="11" r="8" strokeWidth={2} />
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M21 21l-4.35-4.35M8 11h6"
-            />
-          </svg>
-        </button>
-
-        {/* Auto-Rotate Toggle (Dot Button) */}
-        <button
-          onClick={() => setAutoRotate(!autoRotate)}
-          className={`w-12 h-12 flex items-center justify-center transition-colors border-b border-[#3a4560] ${
-            autoRotate ? "bg-[#67B68B]/20" : "hover:bg-[#3a4560]"
-          }`}
-          title={autoRotate ? "Stop Auto-Rotate" : "Start Auto-Rotate"}
-        >
-          <div
-            className={`w-3 h-3 rounded-full transition-colors ${
-              autoRotate ? "bg-[#67B68B]" : "bg-[#67B68B]/40"
-            }`}
-          />
-        </button>
-
-        {/* Increase Contrast */}
-        <button
-          onClick={() => setContrast(Math.min(contrast + 0.3, 5.0))}
-          className="w-12 h-12 flex items-center justify-center text-[#67B68B] hover:bg-[#3a4560] transition-colors border-b border-[#3a4560]"
-          title="Increase Brightness"
-        >
-          <svg
-            className="w-5 h-5"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <circle cx="12" cy="12" r="10" strokeWidth={2} />
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M12 8v8m4-4H8"
-            />
-          </svg>
-        </button>
-
-        {/* Decrease Contrast */}
-        <button
-          onClick={() => setContrast(Math.max(contrast - 0.3, 0.5))}
-          className="w-12 h-12 flex items-center justify-center text-[#67B68B] hover:bg-[#3a4560] transition-colors"
-          title="Decrease Brightness"
-        >
-          <svg
-            className="w-5 h-5"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <circle cx="12" cy="12" r="10" strokeWidth={2} />
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M16 12H8"
-            />
-          </svg>
-        </button>
-      </div>
-
-      {/* Bottom Tooltip */}
-      <div className="absolute bottom-4 left-4 flex items-center gap-2 text-sm text-[#67B68B]">
-        <svg
-          className="w-4 h-4"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-          />
-        </svg>
-        <span>Use mouse to rotate, zoom, and pan</span>
-      </div>
+  return (
+    <div className="w-full h-full relative overflow-hidden">
+      {/* Main Content */}
+      {content}
     </div>
   );
 }
-
