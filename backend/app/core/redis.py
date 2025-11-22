@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import logging
 import os
+
 import redis
 from redis.exceptions import RedisError
 
@@ -22,6 +25,9 @@ def _resolve_redis_url() -> str:
 def get_redis_url() -> str:
     """Public helper for retrieving the active Redis connection URL."""
     return _resolve_redis_url()
+
+
+logger = logging.getLogger(__name__)
 
 
 class RedisService:
@@ -57,6 +63,11 @@ class RedisService:
             self._fallback_store[key] = value
             return True
 
+    def set_json(self, key: str, value: object, ex: int | None = None) -> bool:
+        """Serialize value to JSON before storing."""
+        payload = json.dumps(value, ensure_ascii=False)
+        return self.set(key, payload, ex=ex)
+
     def setex(self, key: str, time: int, value: str) -> bool:
         """Set key with expiration time; fallback ignores expiry."""
         try:
@@ -77,6 +88,17 @@ class RedisService:
         except RedisError:
             self._use_fallback = True
             return 1 if self._fallback_store.pop(key, None) is not None else 0
+
+    def get_json(self, key: str, default: object | None = None) -> object | None:
+        """Return JSON-decoded payload with graceful fallback."""
+        raw_value = self.get(key)
+        if raw_value is None:
+            return default
+        try:
+            return json.loads(raw_value)
+        except json.JSONDecodeError:
+            logger.warning("Failed to decode JSON for key %s", key)
+            return default
 
     def exists(self, key: str) -> bool:
         if self._use_fallback:
