@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2 } from "lucide-react";
@@ -9,6 +9,7 @@ export function AIChatPanel() {
   const [prompt, setPrompt] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [history, setHistory] = useState<Array<{ prompt: string; response: string }>>([]);
+  const [isMounted, setIsMounted] = useState(false);
 
   const suggestions = [
     "Make the model taller",
@@ -18,6 +19,11 @@ export function AIChatPanel() {
     "Make it smaller",
     "Add lighting effects"
   ];
+
+  // Only render suggestions after component mounts to avoid hydration mismatch
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   const handleSubmit = async () => {
     if (!prompt.trim()) return;
@@ -62,20 +68,22 @@ export function AIChatPanel() {
       </div>
 
       {/* Suggestions */}
-      <div className="space-y-2">
-        <div className="flex flex-wrap gap-1.5">
-          {suggestions.map((suggestion, i) => (
-            <button
-              key={i}
-              onClick={() => setPrompt(suggestion)}
-              disabled={isProcessing}
-              className="text-xs px-2.5 py-1.5 bg-secondary text-secondary-foreground rounded-full border-2 border-black hover:bg-secondary/80 transition-colors disabled:opacity-50"
-            >
-              {suggestion}
-            </button>
-          ))}
+      {isMounted && (
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-1.5">
+            {suggestions.map((suggestion) => (
+              <button
+                key={suggestion}
+                onClick={() => setPrompt(suggestion)}
+                disabled={isProcessing}
+                className="text-xs px-2.5 py-1.5 bg-secondary text-secondary-foreground rounded-full border-2 border-black hover:bg-secondary/80 transition-colors disabled:opacity-50"
+              >
+                {suggestion}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {history.length > 0 && (
         <div className="space-y-2 flex-1 flex flex-col min-h-0">
