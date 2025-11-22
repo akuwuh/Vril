@@ -101,6 +101,9 @@ class ProductPipelineService:
             state.iterations.append(iteration)
             state.mark_complete("3D asset generated")
             save_product_state(state)
+            
+            # Save Trellis GLB model to artifacts
+            self._save_trellis_model(artifacts, mode)
 
             preview = self._determine_preview_image(state)
             self._update_status(
@@ -175,6 +178,35 @@ class ProductPipelineService:
                     logger.warning(f"[product-pipeline] Skipping image {idx} - not a data URL (preview: {str(img)[:100]})")
         except Exception as exc:
             logger.warning(f"[product-pipeline] Failed to create artifacts dir: {exc}")
+
+    def _save_trellis_model(self, artifacts: TrellisArtifacts, mode: str) -> None:
+        """Download and save Trellis GLB model to artifacts."""
+        try:
+            if not artifacts.model_file:
+                logger.warning("[product-pipeline] No model_file to save")
+                return
+            
+            run_dir = ARTIFACTS_DIR / f"trellis_{mode}_{int(time.time())}"
+            run_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Download GLB model
+            import urllib.request
+            glb_path = run_dir / "model.glb"
+            logger.info("[product-pipeline] Downloading GLB from %s...", artifacts.model_file[:80])
+            with urllib.request.urlopen(artifacts.model_file) as response:
+                glb_path.write_bytes(response.read())
+            logger.info("[product-pipeline] ✓ Saved GLB model to %s (%.1f KB)", glb_path, glb_path.stat().st_size / 1024)
+            
+            # Download color video if available
+            if artifacts.color_video:
+                video_path = run_dir / "color.mp4"
+                logger.info(f"[product-pipeline] Downloading color video...")
+                with urllib.request.urlopen(artifacts.color_video) as response:
+                    video_path.write_bytes(response.read())
+                logger.info(f"[product-pipeline] ✓ Saved color video to {video_path}")
+                
+        except Exception as exc:
+            logger.warning(f"[product-pipeline] Failed to save Trellis artifacts: {exc}")
 
 
 product_pipeline_service = ProductPipelineService()

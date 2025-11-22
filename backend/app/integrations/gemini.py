@@ -237,11 +237,12 @@ class GeminiImageService:
         thinking_level: Optional[str],
         angle_index: int = 0,
     ) -> Optional[str]:
-        # Define camera angles for multi-view generation
+        # Define camera angles for multi-view 3D reconstruction
+        # These angles provide maximum surface coverage for photogrammetry
         angles = [
-            "front view at eye level",
-            "three-quarter view from the right side",
-            "overhead view looking down"
+            "front view at eye level, perfectly centered",
+            "45-degree angle from upper right, showing top and right side",
+            "side profile view from the left at eye level"
         ]
         angle_description = angles[angle_index] if angle_index < len(angles) else "alternate angle"
         
