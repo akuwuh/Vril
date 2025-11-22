@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useRef } from "react";
 import { LayoutRouterContext } from "next/dist/shared/lib/app-router-context.shared-runtime";
 import { useContext } from "react";
+import { TransitionPathnameContext } from "@/context/TransitionPathnameContext";
 
 // This component freezes the context for the exit animation
 function FrozenRoute({ children }: { children: React.ReactNode }) {
@@ -31,7 +32,11 @@ export default function PageTransition({ children }: { children: React.ReactNode
         transition={{ duration: 0.3, ease: "easeInOut" }}
         className="h-full w-full flex-1 flex flex-col overflow-hidden"
       >
-        <FrozenRoute>{children}</FrozenRoute>
+        <FrozenRoute>
+          <TransitionPathnameContext.Provider value={pathname}>
+            {children}
+          </TransitionPathnameContext.Provider>
+        </FrozenRoute>
       </motion.div>
     </AnimatePresence>
   );

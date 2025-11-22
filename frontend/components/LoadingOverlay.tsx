@@ -14,9 +14,12 @@ export default function LoadingOverlay({ isVisible, isExiting = false }: Loading
     <div
       className={`
         fixed inset-0 z-[100] flex flex-col items-center justify-center bg-background
-        transition-transform duration-700 cubic-bezier(0.76, 0, 0.24, 1)
+        transition-transform duration-700 cubic-bezier(0.68, -0.55, 0.27, 1.55)
         ${!isVisible && !isExiting ? "hidden" : ""}
-        ${isExiting ? "-translate-y-full" : "translate-y-0 animate-in slide-in-from-top duration-700"}
+        ${isExiting 
+          ? "-translate-y-full" 
+          : "translate-y-0 animate-in slide-in-from-top duration-700 fill-mode-forwards delay-100"
+        }
       `}
     >
       <div className="flex flex-col items-center justify-center w-full h-full space-y-8">

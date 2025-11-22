@@ -1,13 +1,13 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { useTransitionPathname } from "@/context/TransitionPathnameContext";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Box, Package, Image as ImageIcon, Boxes, Edit } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function Header() {
-  const pathname = usePathname();
+  const pathname = useTransitionPathname();
 
   // Don't render header on home page or if pathname is null
   if (!pathname || pathname === "/") {
