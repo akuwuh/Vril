@@ -35,7 +35,7 @@ export default function Home() {
     if (!prompt.trim()) return;
     
     setIsGenerating(true);
-    startLoading();
+    setTimeout(() => startLoading(), 100); // Small delay before showing loading screen
 
     try {
       // Mock API call to backend
