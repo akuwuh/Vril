@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowRight, Sparkles, Upload, Image as ImageIcon, Box, Boxes, X } from "lucide-react";
+import { ArrowRight, Upload, Boxes, X } from "lucide-react";
 import { useLoading } from "@/providers/LoadingProvider";
 
 export default function Home() {
@@ -107,9 +107,9 @@ export default function Home() {
   };
 
   const suggestions = [
-    { icon: Box, text: "Design a modern perfume bottle" },
-    { icon: Sparkles, text: "Create eco-friendly cereal box" },
-    { icon: ImageIcon, text: "Generate minimal coffee packaging" },
+    { text: "Design a blue water bottle" },
+    { text: "Create a brown wooden baseball bat" },
+    { text: "Generate a red lego block" },
   ];
 
   const logoPaths = [
@@ -187,7 +187,7 @@ export default function Home() {
             What do you want to build?
           </h1>
           <p className="text-muted-foreground text-lg">
-            Describe your packaging idea and let AI visualize it for you.
+            Describe your product idea and let AI visualize it for you.
           </p>
         </div>
 
@@ -297,7 +297,6 @@ export default function Home() {
               className="flex items-center gap-2 px-4 py-2 text-sm bg-background border-2 border-black rounded-full 
                          hover:bg-secondary hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] cursor-pointer"
             >
-              <suggestion.icon className="w-4 h-4" />
               {suggestion.text}
             </button>
           ))}
