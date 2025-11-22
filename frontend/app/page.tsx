@@ -173,7 +173,7 @@ export default function Home() {
       {/* Top Logo */}
       <div className={`
         absolute top-8 left-8 z-10
-        transition-all duration-500 ease-out
+        transition-all duration-300 ease-out
         ${isLoaded ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-2"}
       `}>
         <div className="flex items-center gap-3">
@@ -187,7 +187,7 @@ export default function Home() {
         
         <div className={`
           space-y-2 text-center mb-4
-          transition-all duration-700 ease-out
+          transition-all duration-500 ease-out
           ${isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"}
         `}>
           <h1 className="text-4xl md:text-5xl font-bold tracking-tight">
@@ -201,7 +201,7 @@ export default function Home() {
         <div 
           className={`
             w-full max-w-2xl relative group
-            transition-all duration-700 ease-out delay-100
+            transition-all duration-500 ease-out delay-100
             ${isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"}
           `}
         >
@@ -294,7 +294,7 @@ export default function Home() {
 
         <div className={`
           flex flex-wrap justify-center gap-3 mt-8 
-          transition-all duration-500 ease-out delay-200
+          transition-all duration-300 ease-out delay-200
           ${isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}
         `}>
           {suggestions.map((suggestion, i) => (
