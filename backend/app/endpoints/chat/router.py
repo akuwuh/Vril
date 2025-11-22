@@ -30,7 +30,7 @@ async def generate_chat_response(request: ChatRequest):
         )
         
         if "error" in response:
-            raise HTTPException(status_code=500, detail=response["error"])
+            raise HTTPExgitception(status_code=500, detail=response["error"])
             
         return response
     except Exception as e:

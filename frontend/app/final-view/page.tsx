@@ -61,17 +61,17 @@ export default function FinalView() {
           <div className="container mx-auto px-6 py-6 max-w-4xl">
             <h3 className="font-bold text-lg mb-4">Export Options</h3>
             <div className="grid grid-cols-3 gap-4">
-              <button className="flex flex-col items-center justify-center p-4 rounded-lg border-2 border-black bg-card hover:bg-accent transition-all duration-200 hover:scale-[1.02] active:scale-95 group">
+              <button className="flex flex-col items-center justify-center p-4 rounded-lg border-2 border-black bg-card hover:bg-accent transition-all duration-200 hover:scale-[1.02] active:scale-95 group cursor-pointer">
                 <Download className="w-6 h-6 mb-2 transition-transform group-hover:-translate-y-1" />
                 <span className="font-bold text-sm">2D Dieline</span>
                 <span className="text-xs text-muted-foreground mt-1">PDF, SVG, PNG</span>
               </button>
-              <button className="flex flex-col items-center justify-center p-4 rounded-lg border-2 border-black bg-card hover:bg-accent transition-all duration-200 hover:scale-[1.02] active:scale-95 group">
+              <button className="flex flex-col items-center justify-center p-4 rounded-lg border-2 border-black bg-card hover:bg-accent transition-all duration-200 hover:scale-[1.02] active:scale-95 group cursor-pointer">
                 <Download className="w-6 h-6 mb-2 transition-transform group-hover:-translate-y-1" />
                 <span className="font-bold text-sm">3D Model</span>
                 <span className="text-xs text-muted-foreground mt-1">OBJ, FBX, GLTF</span>
               </button>
-              <button className="flex flex-col items-center justify-center p-4 rounded-lg border-2 border-black bg-card hover:bg-accent transition-all duration-200 hover:scale-[1.02] active:scale-95 group">
+              <button className="flex flex-col items-center justify-center p-4 rounded-lg border-2 border-black bg-card hover:bg-accent transition-all duration-200 hover:scale-[1.02] active:scale-95 group cursor-pointer">
                 <Download className="w-6 h-6 mb-2 transition-transform group-hover:-translate-y-1" />
                 <span className="font-bold text-sm">Render Images</span>
                 <span className="text-xs text-muted-foreground mt-1">High-res PNG</span>

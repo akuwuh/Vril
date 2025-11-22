@@ -35,7 +35,7 @@ export function Header() {
     <header className="border-b-2 border-black flex-shrink-0 bg-background z-50">
       <div className="w-full px-4 py-3 flex items-center justify-between relative min-h-[72px]">
         <div className="flex items-center gap-4 absolute left-4 top-1/2 -translate-y-1/2 z-10">
-          <Link href="/product">
+          <Link href="/">
             <Boxes className="w-12 h-12 cursor-pointer" />
           </Link>
         </div>
