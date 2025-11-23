@@ -12,6 +12,7 @@ interface DielineEditorProps {
   onDielineChange?: (dielines: DielinePath[]) => void
   onPanelSelect?: (panelId: PanelId | null) => void
   editable?: boolean
+  panelTextures?: Partial<Record<PanelId, string>>
 }
 
 export function DielineEditor({
@@ -21,6 +22,7 @@ export function DielineEditor({
   onDielineChange,
   onPanelSelect,
   editable = true,
+  panelTextures = {},
 }: DielineEditorProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [selectedPoint, setSelectedPoint] = useState<{ pathIndex: number; pointIndex: number } | null>(null)
@@ -31,6 +33,38 @@ export function DielineEditor({
   const [offset, setOffset] = useState({ x: 0, y: 0 })
   const hasInitialized = useRef(false)
   const initialDielinesRef = useRef<DielinePath[] | null>(null)
+  const [loadedTextures, setLoadedTextures] = useState<Map<PanelId, HTMLImageElement>>(new Map())
+
+  // Load textures when panelTextures change
+  useEffect(() => {
+    const textureMap = new Map<PanelId, HTMLImageElement>()
+    const loadPromises: Promise<void>[] = []
+
+    Object.entries(panelTextures).forEach(([panelId, textureUrl]) => {
+      if (!textureUrl) return
+
+      const img = new Image()
+      img.crossOrigin = "anonymous"
+      
+      const loadPromise = new Promise<void>((resolve, reject) => {
+        img.onload = () => {
+          textureMap.set(panelId as PanelId, img)
+          resolve()
+        }
+        img.onerror = () => {
+          console.error(`Failed to load texture for panel ${panelId}`)
+          resolve() // Resolve anyway to not block other textures
+        }
+        img.src = textureUrl
+      })
+      
+      loadPromises.push(loadPromise)
+    })
+
+    Promise.all(loadPromises).then(() => {
+      setLoadedTextures(textureMap)
+    })
+  }, [panelTextures])
 
   // Only auto-fit on initial load, preserve view when dielines change
   // Track the first set of dielines we see, and only initialize once
@@ -107,7 +141,8 @@ export function DielineEditor({
     if (panels) {
       panels.forEach((panel) => {
         if (panel.bounds && panel.dielinePathIndex !== undefined) {
-          drawPanelRegion(ctx, panel, panel.id === selectedPanelId)
+          const texture = loadedTextures.get(panel.id)
+          drawPanelRegion(ctx, panel, panel.id === selectedPanelId, texture)
         }
       })
     }
@@ -136,7 +171,7 @@ export function DielineEditor({
     })
 
     ctx.restore()
-  }, [dielines, scale, offset, selectedPoint, panels, selectedPanelId])
+  }, [dielines, scale, offset, selectedPoint, panels, selectedPanelId, loadedTextures])
 
   const drawGrid = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
     const baseGridSize = 20
@@ -165,16 +200,29 @@ export function DielineEditor({
     }
   }
 
-  const drawPanelRegion = (ctx: CanvasRenderingContext2D, panel: Panel, isSelected: boolean) => {
+  const drawPanelRegion = (ctx: CanvasRenderingContext2D, panel: Panel, isSelected: boolean, texture?: HTMLImageElement) => {
     if (!panel.bounds) return
 
     const { minX, minY, maxX, maxY } = panel.bounds
     const width = maxX - minX
     const height = maxY - minY
 
-    // Draw semi-transparent background
-    ctx.fillStyle = isSelected ? "rgba(251, 191, 36, 0.2)" : "rgba(59, 130, 246, 0.1)"
-    ctx.fillRect(minX, minY, width, height)
+    // Draw texture if available
+    if (texture && texture.complete && texture.naturalWidth > 0) {
+      ctx.save()
+      // Create clipping path for the panel region
+      ctx.beginPath()
+      ctx.rect(minX, minY, width, height)
+      ctx.clip()
+      
+      // Draw texture
+      ctx.drawImage(texture, minX, minY, width, height)
+      ctx.restore()
+    } else {
+      // Draw semi-transparent background only if no texture
+      ctx.fillStyle = isSelected ? "rgba(251, 191, 36, 0.2)" : "rgba(59, 130, 246, 0.1)"
+      ctx.fillRect(minX, minY, width, height)
+    }
 
     // Draw border
     ctx.strokeStyle = isSelected ? "#fbbf24" : "#3b82f6"
@@ -183,7 +231,11 @@ export function DielineEditor({
     ctx.strokeRect(minX, minY, width, height)
     ctx.setLineDash([])
 
-    // Draw panel label
+    // Draw panel label (with background for visibility over texture)
+    if (texture && texture.complete && texture.naturalWidth > 0) {
+      ctx.fillStyle = "rgba(0, 0, 0, 0.6)"
+      ctx.fillRect(minX + width / 2 - 30, minY + height / 2 - 8, 60, 16)
+    }
     ctx.fillStyle = isSelected ? "#fbbf24" : "#3b82f6"
     ctx.font = `${12 / scale}px sans-serif`
     ctx.textAlign = "center"

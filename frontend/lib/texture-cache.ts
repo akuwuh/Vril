@@ -33,17 +33,24 @@ export async function getCachedTextureUrl(
     return blobUrlCache.get(panelId)!;
   }
   
-  // Tier 1: Check Cache Storage
-  const cache = await caches.open(CACHE_NAME);
-  const cacheKey = `texture_${panelId}`;
-  const cached = await cache.match(cacheKey);
-  
-  if (cached) {
-    const blob = await cached.blob();
-    const blobUrl = URL.createObjectURL(blob);
-    blobUrlCache.set(panelId, blobUrl);
-    urlTracker.set(panelId, remoteUrl);
-    return blobUrl;
+  // Tier 1: Check Cache Storage (only if available in browser)
+  if (typeof caches !== 'undefined') {
+    try {
+      const cache = await caches.open(CACHE_NAME);
+      const cacheKey = `texture_${panelId}`;
+      const cached = await cache.match(cacheKey);
+      
+      if (cached) {
+        const blob = await cached.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        blobUrlCache.set(panelId, blobUrl);
+        urlTracker.set(panelId, remoteUrl);
+        return blobUrl;
+      }
+    } catch (error) {
+      // Cache Storage might not be available, fall through to fetch
+      console.warn('Cache Storage not available, using in-memory cache only:', error);
+    }
   }
   
   // Cache miss: Fetch and cache
@@ -55,8 +62,17 @@ export async function getCachedTextureUrl(
   
   const blob = await response.blob();
   
-  // Store in Cache Storage for persistence
-  await cache.put(cacheKey, new Response(blob));
+  // Store in Cache Storage for persistence (only if available)
+  if (typeof caches !== 'undefined') {
+    try {
+      const cache = await caches.open(CACHE_NAME);
+      const cacheKey = `texture_${panelId}`;
+      await cache.put(cacheKey, new Response(blob));
+    } catch (error) {
+      // Cache Storage might not be available, continue with in-memory cache only
+      console.warn('Failed to store in Cache Storage, using in-memory cache only:', error);
+    }
+  }
   
   // Create and store blob URL for in-memory cache
   const blobUrl = URL.createObjectURL(blob);
@@ -81,8 +97,17 @@ export async function clearTextureCache(panelId?: string): Promise<void> {
     
     blobUrlCache.delete(panelId);
     urlTracker.delete(panelId);
-    const cache = await caches.open(CACHE_NAME);
-    await cache.delete(`texture_${panelId}`);
+    
+    // Clear from Cache Storage if available
+    if (typeof caches !== 'undefined') {
+      try {
+        const cache = await caches.open(CACHE_NAME);
+        await cache.delete(`texture_${panelId}`);
+      } catch (error) {
+        // Cache Storage might not be available, continue
+        console.warn('Failed to clear from Cache Storage:', error);
+      }
+    }
   } else {
     // Revoke all blob URLs
     for (const blobUrl of blobUrlCache.values()) {
@@ -91,7 +116,16 @@ export async function clearTextureCache(panelId?: string): Promise<void> {
     
     blobUrlCache.clear();
     urlTracker.clear();
-    await caches.delete(CACHE_NAME);
+    
+    // Clear all from Cache Storage if available
+    if (typeof caches !== 'undefined') {
+      try {
+        await caches.delete(CACHE_NAME);
+      } catch (error) {
+        // Cache Storage might not be available, continue
+        console.warn('Failed to clear Cache Storage:', error);
+      }
+    }
   }
 }
 

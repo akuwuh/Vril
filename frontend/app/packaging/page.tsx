@@ -10,6 +10,22 @@ import { DielineEditor } from "@/components/dieline-editor";
 import { PackageViewer3D } from "@/components/package-viewer-3d";
 import { AIChatPanel } from "@/components/AIChatPanel";
 import { CylinderIcon, Box, CheckCircle2, MessageSquare, Pencil } from "lucide-react";
+import { useLoading } from "@/providers/LoadingProvider";
+import { updatePackagingDimensions, getPackagingState, getPackagingStatus } from "@/lib/packaging-api";
+import { getCachedTextureUrl } from "@/lib/texture-cache";
+import type {
+  PackageType,
+  PackageDimensions,
+  PackagingState,
+  PackageModel,
+  PanelId,
+  DielinePath,
+} from "@/lib/packaging-types";
+import {
+  DEFAULT_PACKAGE_DIMENSIONS,
+  generatePackageModel,
+  updateModelFromDielines,
+} from "@/lib/packaging-types";
 
 // Separate component for the editor panel to reduce main component re-renders
 const PackagingEditor = React.memo(function PackagingEditor({
@@ -231,20 +247,6 @@ const PackagingEditor = React.memo(function PackagingEditor({
     </TabsContent>
   );
 });
-import { useLoading } from "@/providers/LoadingProvider";
-import { updatePackagingDimensions, getPackagingState, getPackagingStatus } from "@/lib/packaging-api";
-import { getCachedTextureUrl } from "@/lib/texture-cache";
-import {
-  type PackageType,
-  type PackageDimensions,
-  type PackagingState,
-  DEFAULT_PACKAGE_DIMENSIONS,
-  generatePackageModel,
-  updateModelFromDielines,
-  type PackageModel,
-  type PanelId,
-  type DielinePath,
-} from "@/lib/packaging-types";
 
 const PACKAGE_TYPES: readonly { type: PackageType; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { type: "box", label: "Box", icon: Box },
@@ -560,6 +562,7 @@ function Packaging() {
                 onDielineChange={handleDielineChange}
                 onPanelSelect={setSelectedPanelId}
                 editable={true}
+                panelTextures={panelTextures}
               />
             ) : (
               <div className="h-full bg-muted/30 relative">

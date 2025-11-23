@@ -609,7 +609,13 @@ export function PackageViewer3D(props: PackageViewer3DProps) {
         <Package3D {...props} wireframe={wireframe} autoRotate={autoRotate} />
       </Canvas>
 
-      {props.model.dielines && <MiniDielineHud dielines={props.model.dielines} />}
+      {props.model.dielines && (
+        <MiniDielineHud 
+          dielines={props.model.dielines} 
+          panels={props.model.panels}
+          panelTextures={props.panelTextures}
+        />
+      )}
     </div>
   )
 }
