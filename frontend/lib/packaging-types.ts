@@ -23,6 +23,8 @@ export interface PackagingState {
   last_error: string | null;
   created_at: string;
   updated_at: string;
+  export_files?: Record<string, string>; // format -> file_path
+  dieline_export_files?: Record<string, string>; // format -> file_path
   
   // Backward compatibility properties (computed on backend)
   package_type: PackageType;

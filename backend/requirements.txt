@@ -9,3 +9,7 @@ google-genai>=1.47.0
 redis
 pytest
 pytest-asyncio
+trimesh
+pygltflib
+Pillow
+cairosvg

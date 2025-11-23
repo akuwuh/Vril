@@ -1,10 +1,14 @@
 "use client";
 
-import { useRef, useState, Suspense, useEffect, useCallback } from "react";
+import React, { useRef, useState, Suspense, useEffect, useCallback } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Environment, useGLTF } from "@react-three/drei";
 import { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import * as THREE from "three";
+
+export interface ModelViewerRef {
+  captureScreenshot: () => Promise<string>;
+}
 
 interface ModelViewerProps {
   modelUrl?: string;
@@ -93,16 +97,46 @@ function ErrorDisplay({ message }: { message: string }) {
   );
 }
 
-export default function ModelViewer({
-  modelUrl,
-  error,
-  lightingMode = "studio",
-  wireframe = false,
-  zoomAction,
-  autoRotate = true,
-}: ModelViewerProps) {
+const ModelViewer = React.forwardRef<ModelViewerRef, ModelViewerProps>(
+  function ModelViewer({
+    modelUrl,
+    error,
+    lightingMode = "studio",
+    wireframe = false,
+    zoomAction,
+    autoRotate = true,
+  }, ref) {
   const controlsRef = useRef<OrbitControlsImpl>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
+  // Expose screenshot function via ref
+  React.useImperativeHandle(ref, () => ({
+    captureScreenshot: async () => {
+      if (!canvasRef.current) {
+        throw new Error("Canvas not available");
+      }
+      
+      // Get the canvas element
+      const canvas = canvasRef.current;
+      
+      // Convert to blob then to data URL for better quality
+      return new Promise<string>((resolve, reject) => {
+        canvas.toBlob((blob) => {
+          if (!blob) {
+            reject(new Error("Failed to capture screenshot"));
+            return;
+          }
+          
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            resolve(reader.result as string);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        }, "image/jpeg", 0.95);
+      });
+    },
+  }), []);
 
   useEffect(() => {
     if (!zoomAction || !controlsRef.current) return;
@@ -139,14 +173,17 @@ export default function ModelViewer({
         gl={{
           toneMapping: 2,
           toneMappingExposure: 2.0,
-          preserveDrawingBuffer: false,
+          preserveDrawingBuffer: true, // Enable for screenshot capture
           powerPreference: "high-performance",
           antialias: true,
         }}
         className="w-full h-full"
         frameloop="always"
+        onCreated={({ gl }) => {
+          canvasRef.current = gl.domElement;
+        }}
       >
-        <color attach="background" args={["hsl(var(--muted)/0.3)"]} />
+        <color attach="background" args={["#ffffff"]} />
 
         <Suspense fallback={null}>
           <Environment preset={lightingMode} background={false} />
@@ -171,4 +208,6 @@ export default function ModelViewer({
       {error && <ErrorDisplay message={error} />}
     </div>
   );
-}
+});
+
+export default ModelViewer;

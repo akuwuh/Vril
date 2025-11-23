@@ -90,7 +90,7 @@ export function PanelTextureGenerator({
       panel_id: selectedPanelId,
       prompt: prompt.trim(),
       package_type: packageModel.type,
-      panel_dimensions,
+      panel_dimensions: panelDimensions,
       package_dimensions: packageModel.dimensions,
     })
 

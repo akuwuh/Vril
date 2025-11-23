@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import List, Literal, Optional
+from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -57,6 +57,9 @@ class ProductState(BaseModel):
     last_error: Optional[str] = None
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
+    
+    # Export file tracking
+    export_files: Dict[str, str] = Field(default_factory=dict)  # format -> file_path
 
     def as_json(self) -> dict:
         """Return a JSON-serializable dict."""

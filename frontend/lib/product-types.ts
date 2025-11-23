@@ -33,6 +33,7 @@ export interface ProductState {
   last_error?: string;
   created_at: string;
   updated_at: string;
+  export_files?: Record<string, string>; // format -> file_path
 }
 
 export interface ProductStatus {

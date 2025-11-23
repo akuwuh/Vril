@@ -68,6 +68,10 @@ class PackagingState(BaseModel):
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
     
+    # Export file tracking
+    export_files: Dict[str, str] = Field(default_factory=dict)  # format -> file_path
+    dieline_export_files: Dict[str, str] = Field(default_factory=dict)  # format -> file_path
+    
     # Convenience properties for backward compatibility
     @property
     def package_type(self) -> str:

@@ -3,6 +3,7 @@ import logging
 from typing import Set
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from app.models.product_state import (
@@ -15,6 +16,10 @@ from app.models.product_state import (
     _utcnow,
 )
 from app.services.product_pipeline import product_pipeline_service
+from app.services.file_export import (
+    export_product_formats,
+    get_export_file_path,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -204,5 +209,74 @@ async def rewind_product(iteration_index: int):
         "iteration_index": iteration_index,
         "total_iterations": len(state.iterations),
     }
+
+
+@router.post("/export")
+async def trigger_product_export():
+    """Generate export files for product (blend/stl/jpg)."""
+    state = get_product_state()
+    
+    if not state.trellis_output or not state.trellis_output.model_file:
+        raise HTTPException(status_code=400, detail="No product model available for export")
+    
+    # Generate session ID from state updated_at timestamp
+    session_id = str(int(state.updated_at.timestamp()))
+    
+    try:
+        export_files = export_product_formats(state, session_id)
+        
+        # Update state with export file paths
+        state.export_files = {fmt: str(path) for fmt, path in export_files.items()}
+        save_product_state(state)
+        
+        return {
+            "status": "success",
+            "files": {fmt: str(path) for fmt, path in export_files.items()},
+        }
+    except Exception as e:
+        logger.error(f"[product-router] Export failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
+
+
+@router.get("/export/{format}")
+async def download_product_export(format: str):
+    """Download exported product file."""
+    if format not in ["blend", "stl", "jpg"]:
+        raise HTTPException(status_code=400, detail=f"Invalid format: {format}")
+    
+    state = get_product_state()
+    
+    if not state.trellis_output or not state.trellis_output.model_file:
+        raise HTTPException(status_code=400, detail="No product model available for export")
+    
+    session_id = str(int(state.updated_at.timestamp()))
+    
+    file_path = get_export_file_path(session_id, "product", format)
+    
+    if not file_path or not file_path.exists():
+        # Try to generate if not exists
+        try:
+            export_files = export_product_formats(state, session_id)
+            state.export_files = {fmt: str(path) for fmt, path in export_files.items()}
+            save_product_state(state)
+            file_path = export_files.get(format)
+        except Exception as e:
+            logger.error(f"[product-router] Export generation failed: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Export generation failed: {str(e)}")
+    
+    if not file_path or not file_path.exists():
+        raise HTTPException(status_code=404, detail=f"Export file not found: {format}")
+    
+    media_type_map = {
+        "blend": "application/octet-stream",  # OBJ file
+        "stl": "application/octet-stream",
+        "jpg": "image/jpeg",
+    }
+    
+    return FileResponse(
+        str(file_path),
+        media_type=media_type_map.get(format, "application/octet-stream"),
+        filename=f"product.{format if format != 'blend' else 'obj'}",
+    )
 
 

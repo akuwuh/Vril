@@ -378,6 +378,7 @@ export function DielineEditor({
 </svg>`
   }
 
+
   return (
     <div className="relative w-full h-full bg-white rounded-lg border border-border overflow-hidden">
       <canvas

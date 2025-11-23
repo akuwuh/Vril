@@ -56,3 +56,19 @@ export async function recoverProductState(): Promise<{ recovered: boolean; messa
   return handleResponse(response);
 }
 
+export async function exportProductFormats(): Promise<{ status: string; files: Record<string, string> }> {
+  const response = await fetch(`${API_BASE}/product/export`, {
+    method: "POST",
+  });
+  return handleResponse(response);
+}
+
+export async function downloadProductExport(format: "blend" | "stl" | "jpg"): Promise<Blob> {
+  const response = await fetch(`${API_BASE}/product/export/${format}`);
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(detail || `Request failed with status ${response.status}`);
+  }
+  return response.blob();
+}
+

@@ -9,8 +9,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ZoomIn, ZoomOut, Play, Pause, Settings, Sun, Warehouse, Eye, EyeOff } from "lucide-react";
-import ModelViewer from "@/components/ModelViewer";
+import { ZoomIn, ZoomOut, Play, Pause, Settings, Sun, Warehouse, Eye, EyeOff, Download } from "lucide-react";
+import ModelViewer, { ModelViewerRef } from "@/components/ModelViewer";
 import { AIChatPanel } from "@/components/AIChatPanel";
 import { useLoading } from "@/providers/LoadingProvider";
 import { getProductState, recoverProductState } from "@/lib/product-api";
@@ -27,8 +27,10 @@ function ProductPage() {
   const [zoomAction, setZoomAction] = useState<"in" | "out" | null>(null);
   const [autoRotate, setAutoRotate] = useState(true);
   const [isEditInProgress, setIsEditInProgress] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   
   const latestIterationIdRef = useRef<string | null>(null);
+  const viewerRef = useRef<ModelViewerRef>(null);
 
   const previewImage =
     productState?.trellis_output?.no_background_images?.[0] ??
@@ -116,11 +118,48 @@ function ProductPage() {
     return () => clearTimeout(timer);
   }, [zoomAction]);
 
+  const handleDownloadScreenshot = useCallback(async () => {
+    if (!viewerRef.current || isDownloading || !currentModelUrl) return;
+    
+    try {
+      setIsDownloading(true);
+      
+      // Temporarily disable auto-rotate
+      const wasAutoRotating = autoRotate;
+      setAutoRotate(false);
+      
+      // Wait a bit for the rotation to stop
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      // Capture screenshot
+      const dataUrl = await viewerRef.current.captureScreenshot();
+      
+      // Create download link
+      const link = document.createElement("a");
+      link.href = dataUrl;
+      link.download = `product-${Date.now()}.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      // Restore auto-rotate
+      if (wasAutoRotating) {
+        setAutoRotate(true);
+      }
+    } catch (error) {
+      console.error("Failed to capture screenshot:", error);
+      alert("Failed to capture screenshot. Please try again.");
+    } finally {
+      setIsDownloading(false);
+    }
+  }, [autoRotate, currentModelUrl, isDownloading]);
+
   return (
     <div className="h-screen bg-background flex flex-col overflow-hidden">
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-1 relative bg-muted/30">
           <ModelViewer
+            ref={viewerRef}
             key={modelKey}
             modelUrl={currentModelUrl}
             lightingMode={lightingMode}
@@ -145,6 +184,19 @@ function ProductPage() {
           )}
 
           <div className="absolute top-4 right-4 flex flex-col gap-2">
+            <Button 
+              size="icon" 
+              variant="secondary" 
+              onClick={handleDownloadScreenshot}
+              disabled={isDownloading || !currentModelUrl}
+              title="Download Screenshot"
+            >
+              {isDownloading ? (
+                <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+              ) : (
+                <Download className="w-4 h-4" />
+              )}
+            </Button>
             <Button size="icon" variant="secondary" onClick={() => setZoomAction("in")}>
               <ZoomIn className="w-4 h-4" />
             </Button>

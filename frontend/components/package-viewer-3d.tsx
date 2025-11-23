@@ -19,6 +19,7 @@ interface PackageViewer3DProps {
   wireframe?: boolean
   zoomAction?: "in" | "out" | null
   autoRotate?: boolean
+  hideDielineHud?: boolean
 }
 
 const BoxPackage3D = React.memo(function BoxPackage3D({
@@ -523,15 +524,50 @@ const Package3D = React.memo(function Package3D({
   }
 })
 
-export function PackageViewer3D(props: PackageViewer3DProps) {
+export interface PackageViewer3DRef {
+  captureScreenshot: () => Promise<string>;
+}
+
+export const PackageViewer3D = React.forwardRef<PackageViewer3DRef, PackageViewer3DProps>(
+  function PackageViewer3D(props, ref) {
   const controlsRef = useRef<OrbitControlsImpl>(null)
   const materialsRef = useRef<THREE.MeshStandardMaterial[]>([])
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const {
     lightingMode = "studio",
     wireframe = false,
     zoomAction,
     autoRotate = true,
   } = props
+
+  // Expose screenshot function via ref
+  React.useImperativeHandle(ref, () => ({
+    captureScreenshot: async () => {
+      if (!canvasRef.current) {
+        throw new Error("Canvas not available");
+      }
+      
+      // Get the canvas element
+      const canvas = canvasRef.current;
+      
+      // Convert to blob then to data URL for better quality
+      return new Promise<string>((resolve, reject) => {
+        canvas.toBlob((blob) => {
+          if (!blob) {
+            reject(new Error("Failed to capture screenshot"));
+            return;
+          }
+          
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            resolve(reader.result as string);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        }, "image/jpeg", 0.95);
+      });
+    },
+  }), []);
 
   // Cleanup textures on unmount
   useEffect(() => {
@@ -573,12 +609,17 @@ export function PackageViewer3D(props: PackageViewer3DProps) {
         key="packaging-viewer-canvas"
         shadows
         gl={{
-          preserveDrawingBuffer: false,
+          preserveDrawingBuffer: true, // Enable for screenshot capture
           powerPreference: "high-performance",
           antialias: true,
         }}
         frameloop="demand" // Only render when needed, not constantly
+        onCreated={({ gl }) => {
+          canvasRef.current = gl.domElement;
+        }}
       >
+        <color attach="background" args={["#ffffff"]} />
+        
         <PerspectiveCamera makeDefault position={[4, 3, 4]} />
         <OrbitControls 
           ref={controlsRef}
@@ -589,6 +630,8 @@ export function PackageViewer3D(props: PackageViewer3DProps) {
           maxDistance={10}
           enableDamping
           dampingFactor={0.05}
+          autoRotate={autoRotate}
+          autoRotateSpeed={1}
         />
 
         {/* Lighting */}
@@ -609,7 +652,7 @@ export function PackageViewer3D(props: PackageViewer3DProps) {
         <Package3D {...props} wireframe={wireframe} autoRotate={autoRotate} />
       </Canvas>
 
-      {props.model.dielines && <MiniDielineHud dielines={props.model.dielines} />}
+      {props.model.dielines && !props.hideDielineHud && <MiniDielineHud dielines={props.model.dielines} />}
     </div>
   )
-}
+});

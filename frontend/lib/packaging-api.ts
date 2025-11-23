@@ -45,3 +45,35 @@ export async function clearPackagingState(): Promise<void> {
   await handleResponse(response);
 }
 
+export async function exportPackageFormats(): Promise<{ status: string; files: Record<string, string> }> {
+  const response = await fetch(`${API_BASE}/packaging/export`, {
+    method: "POST",
+  });
+  return handleResponse(response);
+}
+
+export async function downloadPackageExport(format: "blend" | "stl" | "jpg"): Promise<Blob> {
+  const response = await fetch(`${API_BASE}/packaging/export/${format}`);
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ detail: `Request failed with status ${response.status}` }));
+    throw new Error(errorData.detail || `Request failed with status ${response.status}`);
+  }
+  return response.blob();
+}
+
+export async function exportDielineFormats(): Promise<{ status: string; files: Record<string, string> }> {
+  const response = await fetch(`${API_BASE}/packaging/dieline/export`, {
+    method: "POST",
+  });
+  return handleResponse(response);
+}
+
+export async function downloadDielineExport(format: "pdf"): Promise<Blob> {
+  const response = await fetch(`${API_BASE}/packaging/dieline/export/${format}`);
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ detail: `Request failed with status ${response.status}` }));
+    throw new Error(errorData.detail || `Request failed with status ${response.status}`);
+  }
+  return response.blob();
+}
+
