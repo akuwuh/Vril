@@ -231,6 +231,13 @@ function Packaging() {
       : Math.round(Math.PI * width * height + 2 * Math.PI * (width / 2) ** 2);
   }, [packageType, dimensions]);
 
+  const volume = useMemo(() => {
+    const { width, height, depth } = dimensions;
+    return packageType === "box"
+      ? Math.round(width * height * depth)
+      : Math.round(Math.PI * (width / 2) ** 2 * height);
+  }, [packageType, dimensions]);
+
   return (
     <div className="h-screen bg-background flex flex-col overflow-hidden">
       <div className="flex-1 flex overflow-hidden">
@@ -306,7 +313,7 @@ function Packaging() {
                   size="sm"
                   onClick={() => setActiveView("2d")}
                 >
-                  2D Dieline Editor
+                  Dieline
                 </Button>
                 <Button
                   variant={activeView === "3d" ? "default" : "outline"}
@@ -314,7 +321,7 @@ function Packaging() {
                   size="sm"
                   onClick={() => setActiveView("3d")}
                 >
-                  3D Preview
+                  3D
                 </Button>
               </div>
             </div>
@@ -511,18 +518,8 @@ function Packaging() {
               <h3 className="text-sm font-semibold text-foreground">Package Information</h3>
               <div className="text-xs space-y-1">
                 <div className="flex justify-between text-muted-foreground">
-                  <span>Total Panels:</span>
-                  <span className="font-medium text-foreground">{packageModel.panels.length}</span>
-                </div>
-                <div className="flex justify-between text-muted-foreground">
-                  <span>Dieline Paths:</span>
-                  <span className="font-medium text-foreground">{packageModel.dielines.length}</span>
-                </div>
-                <div className="flex justify-between text-muted-foreground">
-                  <span>Total Points:</span>
-                  <span className="font-medium text-foreground">
-                    {packageModel.dielines.reduce((sum, path) => sum + path.points.length, 0)}
-                  </span>
+                  <span>Volume:</span>
+                  <span className="font-medium text-foreground">{volume} mm³</span>
                 </div>
                 <div className="flex justify-between text-muted-foreground">
                   <span>Surface Area:</span>
