@@ -144,7 +144,7 @@ async def generate_all_panels(request: BulkPanelGenerateRequest):
     
     # Run generation in background
     async def _generate_all():
-        completed_count = 0
+        generated_textures = {}  # Accumulate here for atomic save
         failed_panels = []
         
         for panel_id in request.panel_ids:
@@ -154,7 +154,7 @@ async def generate_all_panels(request: BulkPanelGenerateRequest):
                 current_state.generating_panel = panel_id
                 save_packaging_state(current_state)
                 
-                logger.info(f"[packaging-router] Generating texture for panel {panel_id} ({completed_count + 1}/{len(request.panel_ids)})")
+                logger.info(f"[packaging-router] Generating texture for panel {panel_id} ({len(generated_textures) + 1}/{len(request.panel_ids)})")
                 
                 panel_dimensions = request.panels_info.get(panel_id, {})
                 
@@ -167,25 +167,15 @@ async def generate_all_panels(request: BulkPanelGenerateRequest):
                     reference_mockup=request.reference_mockup,
                 )
                 
-                # Get fresh state to avoid race conditions
-                current_state = get_packaging_state()
-                
                 if texture_url:
-                    texture = PanelTexture(
+                    # Accumulate in local dict instead of saving immediately
+                    generated_textures[panel_id] = PanelTexture(
                         panel_id=panel_id,
                         texture_url=texture_url,
                         prompt=request.prompt,
                         dimensions=panel_dimensions,
                     )
-                    current_state.set_panel_texture(panel_id, texture)
-                    
-                    # Remove this panel from generating_panels list
-                    if panel_id in current_state.generating_panels:
-                        current_state.generating_panels.remove(panel_id)
-                    
-                    save_packaging_state(current_state)
-                    completed_count += 1
-                    logger.info(f"[packaging-router] Successfully generated texture for panel {panel_id} ({completed_count}/{len(request.panel_ids)})")
+                    logger.info(f"[packaging-router] Successfully generated texture for panel {panel_id} ({len(generated_textures)}/{len(request.panel_ids)})")
                 else:
                     logger.error(f"[packaging-router] Texture generation returned no image for panel {panel_id}")
                     failed_panels.append(panel_id)
@@ -194,8 +184,11 @@ async def generate_all_panels(request: BulkPanelGenerateRequest):
                 logger.error(f"[packaging-router] Error generating texture for panel {panel_id}: {e}", exc_info=True)
                 failed_panels.append(panel_id)
         
-        # Update final state
+        # ATOMIC UPDATE: Save all textures at once
         final_state = get_packaging_state()
+        if generated_textures:
+            final_state.atomic_update_textures(generated_textures, replace=False)
+        
         final_state.bulk_generation_in_progress = False
         final_state.generating_panel = None
         final_state.generating_panels = []
@@ -259,4 +252,45 @@ async def delete_panel_texture(panel_id: str):
         del state.panel_textures[panel_id]
         save_packaging_state(state)
     return {"status": "deleted", "panel_id": panel_id}
+
+
+class UpdateDimensionsRequest(BaseModel):
+    """Request model for updating package dimensions."""
+    package_type: str = Field(..., description="Package type: 'box' or 'cylinder'")
+    dimensions: dict = Field(..., description="Dimensions dict with width, height, depth")
+
+
+@router.post("/update-dimensions")
+async def update_dimensions(request: UpdateDimensionsRequest):
+    """Update package dimensions and type."""
+    logger.info(f"[packaging-router] Received update: type={request.package_type}, dims={request.dimensions}")
+    
+    state = get_packaging_state()
+    state.package_type = request.package_type
+    state.package_dimensions = request.dimensions
+    save_packaging_state(state)
+    
+    logger.info(f"[packaging-router] ✅ Updated and saved to Redis")
+    return {"status": "updated", "package_type": request.package_type, "dimensions": request.dimensions}
+
+
+@router.get("/status")
+async def get_packaging_status():
+    """Get the current packaging generation status for polling."""
+    state = get_packaging_state()
+    return {
+        "in_progress": state.in_progress or state.bulk_generation_in_progress,
+        "generating_panel": state.generating_panel,
+        "generating_panels": state.generating_panels,
+        "last_error": state.last_error,
+        "updated_at": state.updated_at.isoformat(),
+    }
+
+
+@router.post("/clear")
+async def clear_state():
+    """Reset packaging state to defaults."""
+    state = clear_packaging_state()
+    logger.info("[packaging-router] Cleared packaging state")
+    return state.as_json()
 

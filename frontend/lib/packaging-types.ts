@@ -1,3 +1,33 @@
+// Backend state types for persistence
+export interface PanelTexture {
+  panel_id: string;
+  texture_url: string;
+  prompt: string;
+  generated_at: string;
+  dimensions?: { width: number; height: number };
+}
+
+export interface PackagingState {
+  package_type: PackageType;
+  package_dimensions: PackageDimensions;
+  panel_textures: Record<string, PanelTexture>;
+  in_progress: boolean;
+  generating_panel: string | null;
+  generating_panels: string[];
+  bulk_generation_in_progress: boolean;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PackagingStatus {
+  in_progress: boolean;
+  generating_panel: string | null;
+  generating_panels: string[];
+  last_error: string | null;
+  updated_at: string;
+}
+
 // Package type definitions and configurations
 export type PackageType = "box" | "cylinder"
 

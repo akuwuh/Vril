@@ -10,9 +10,13 @@ import { DielineEditor } from "@/components/dieline-editor";
 import { PackageViewer3D } from "@/components/package-viewer-3d";
 import { AIChatPanel } from "@/components/AIChatPanel";
 import { CylinderIcon, Box, CheckCircle2 } from "lucide-react";
+import { useLoading } from "@/providers/LoadingProvider";
+import { getPackagingState, updatePackagingDimensions, getPackagingStatus } from "@/lib/packaging-api";
+import { getCachedTextureUrl } from "@/lib/texture-cache";
 import {
   type PackageType,
   type PackageDimensions,
+  type PackagingState,
   DEFAULT_PACKAGE_DIMENSIONS,
   generatePackageModel,
   updateModelFromDielines,
@@ -26,6 +30,12 @@ const PACKAGE_TYPES: readonly { type: PackageType; label: string; icon: React.Co
 ] as const;
 
 function Packaging() {
+  const { stopLoading } = useLoading();
+  const [packagingState, setPackagingState] = useState<PackagingState | null>(null);
+  const [isHydrated, setIsHydrated] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  
   const [packageType, setPackageType] = useState<PackageType>("box");
   const [dimensions, setDimensions] = useState<PackageDimensions>(DEFAULT_PACKAGE_DIMENSIONS.box);
   const [packageModel, setPackageModel] = useState<PackageModel>(() =>
@@ -36,27 +46,166 @@ function Packaging() {
   const [panelTextures, setPanelTextures] = useState<Partial<Record<PanelId, string>>>({});
   const [showTextureNotification, setShowTextureNotification] = useState<{ panelId: PanelId; show: boolean } | null>(null);
 
+  /**
+   * Hydrate state from backend on mount/reload.
+   * This is the key to persistence!
+   */
+  const hydrateFromBackend = useCallback(async () => {
+    try {
+      console.log("[Packaging] 🔄 Hydrating state from backend");
+      const state = await getPackagingState();
+      setPackagingState(state);
+      
+      // Validate dimensions before using them
+      const hasValidDimensions = 
+        state.package_dimensions &&
+        typeof state.package_dimensions.width === 'number' &&
+        typeof state.package_dimensions.height === 'number' &&
+        typeof state.package_dimensions.depth === 'number';
+      
+      const targetType = state.package_type || 'box';
+      const targetDimensions = hasValidDimensions
+        ? state.package_dimensions as PackageDimensions
+        : DEFAULT_PACKAGE_DIMENSIONS[targetType];
+      
+      console.log("[Packaging] 📦 Restoring type:", targetType, "dimensions:", targetDimensions);
+      
+      // Update model FIRST, before textures
+      const newModel = generatePackageModel(targetType, targetDimensions);
+      setPackageModel(newModel);
+      
+      // Then update type and dimensions
+      setPackageType(targetType);
+      setDimensions(targetDimensions);
+      
+      // Finally restore textures (now matching the correct model)
+      const cachedTextures: Partial<Record<PanelId, string>> = {};
+      for (const [panelId, texture] of Object.entries(state.panel_textures)) {
+        // Only load textures for panels that exist in the new model
+        if (newModel.panels.some(p => p.id === panelId)) {
+          try {
+            const cachedUrl = await getCachedTextureUrl(panelId, texture.texture_url);
+            cachedTextures[panelId as PanelId] = cachedUrl;
+          } catch (err) {
+            console.error(`[Packaging] ❌ Failed to load texture for ${panelId}:`, err);
+          }
+        }
+      }
+      
+      if (Object.keys(cachedTextures).length > 0) {
+        console.log("[Packaging] 🎨 Restored textures:", Object.keys(cachedTextures));
+        setPanelTextures(cachedTextures);
+      }
+      
+      // If backend had empty/invalid dimensions, persist the defaults we're using
+      if (!hasValidDimensions) {
+        console.log("[Packaging] 💾 Persisting initial defaults to backend");
+        await updatePackagingDimensions(targetType, targetDimensions);
+      }
+      
+      // Check if generation is in progress
+      if (state.in_progress || state.bulk_generation_in_progress) {
+        console.log("[Packaging] ⏳ Generation in progress, resuming polling");
+        setIsGenerating(true);
+      }
+      
+      setIsHydrated(true);
+    } catch (error) {
+      console.error("[Packaging] ❌ Failed to hydrate packaging state:", error);
+      // On error, use defaults
+      const defaultModel = generatePackageModel('box', DEFAULT_PACKAGE_DIMENSIONS.box);
+      setPackageModel(defaultModel);
+      setPackageType('box');
+      setDimensions(DEFAULT_PACKAGE_DIMENSIONS.box);
+      setIsHydrated(true);
+    }
+  }, []);
+  
+  // Hydrate on mount ONLY (not on every render)
   useEffect(() => {
+    hydrateFromBackend().finally(() => stopLoading());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty array = mount only
+  
+  // Poll for generation completion
+  useEffect(() => {
+    if (!isGenerating) return;
+    
+    console.log("[Packaging] 🔄 Starting polling for generation completion");
+    const pollInterval = setInterval(async () => {
+      try {
+        const status = await getPackagingStatus();
+        if (!status.in_progress) {
+          console.log("[Packaging] ✅ Generation complete, re-hydrating");
+          clearInterval(pollInterval);
+          await hydrateFromBackend(); // Re-hydrate to get new textures
+          setIsGenerating(false);
+        }
+      } catch (err) {
+        console.error("[Packaging] ❌ Polling error:", err);
+      }
+    }, 2000);
+    
+    return () => {
+      console.log("[Packaging] 🛑 Stopping polling");
+      clearInterval(pollInterval);
+    };
+  }, [isGenerating, hydrateFromBackend]);
+
+  useEffect(() => {
+    // Skip if not yet hydrated (hydration handles model generation)
+    if (!isHydrated) return;
+    
+    console.log("[Packaging] 🔄 Regenerating model from dimension/type change");
     const newModel = generatePackageModel(packageType, dimensions);
     setPackageModel(newModel);
     setSelectedPanelId(null);
-  }, [packageType, dimensions.width, dimensions.height, dimensions.depth]);
-  const handlePackageTypeChange = useCallback((type: PackageType) => {
+  }, [packageType, dimensions.width, dimensions.height, dimensions.depth, isHydrated]);
+  const handlePackageTypeChange = useCallback(async (type: PackageType) => {
+    console.log("[Packaging] 📦 Changing package type to:", type);
     setPackageType(type);
-    setDimensions(DEFAULT_PACKAGE_DIMENSIONS[type]);
+    const newDimensions = DEFAULT_PACKAGE_DIMENSIONS[type];
+    setDimensions(newDimensions);
     setSelectedPanelId(null);
+    
+    // Persist to backend
+    try {
+      await updatePackagingDimensions(type, newDimensions);
+      console.log("[Packaging] ✅ Persisted package type change");
+    } catch (err: any) {
+      console.error("[Packaging] ❌ Failed to save package type:", err);
+      console.error("[Packaging] Error details:", err.message);
+      setSaveError(`Failed to save: ${err.message}`);
+      setTimeout(() => setSaveError(null), 5000);
+    }
   }, []);
 
-  const handleDimensionChange = useCallback((key: keyof PackageDimensions, value: number) => {
+  const handleDimensionChange = useCallback(async (key: keyof PackageDimensions, value: number) => {
     const validValue = isNaN(value) || value < 0 ? 0 : value;
-    setDimensions((prev) => ({ ...prev, [key]: validValue }));
-  }, []);
+    
+    setDimensions(prev => {
+      const newDimensions = { ...prev, [key]: validValue };
+      
+      // Persist to backend (fire-and-forget, non-blocking)
+      updatePackagingDimensions(packageType, newDimensions).catch(err => {
+        console.error("[Packaging] ❌ Failed to save dimensions:", err);
+        console.error("[Packaging] Error details:", err.message);
+        setSaveError(`Failed to save: ${err.message}`);
+        setTimeout(() => setSaveError(null), 5000);
+      });
+      
+      return newDimensions;
+    });
+  }, [packageType]);
 
   const handleDielineChange = useCallback((newDielines: typeof packageModel.dielines) => {
     setPackageModel((prev) => updateModelFromDielines(prev, newDielines));
   }, []);
 
   const handleTextureGenerated = useCallback((panelId: PanelId, textureUrl: string) => {
+    console.log("[Packaging] 🎨 Texture generated for:", panelId);
+    
+    // Optimistic local update
     setPanelTextures((prev) => ({ ...prev, [panelId]: textureUrl }));
     
     setPackageModel((prev) => ({
@@ -70,6 +219,7 @@ function Packaging() {
       },
     }));
 
+    // Backend already saved the texture, just show notification
     setShowTextureNotification({ panelId, show: true });
     setTimeout(() => setShowTextureNotification(null), 3000);
   }, []);
@@ -115,6 +265,14 @@ function Packaging() {
                           {packageModel.panels.find(p => p.id === showTextureNotification.panelId)?.name} panel updated
                         </p>
                       </div>
+                    </div>
+                  </div>
+                )}
+                
+                {saveError && (
+                  <div className="absolute top-4 right-4 z-50 animate-in fade-in slide-in-from-top-2 duration-300">
+                    <div className="bg-red-600 text-white px-4 py-2 rounded-lg shadow-lg">
+                      {saveError}
                     </div>
                   </div>
                 )}
