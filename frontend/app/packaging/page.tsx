@@ -31,6 +31,7 @@ export default function Packaging() {
   );
   const [selectedPanelId, setSelectedPanelId] = useState<PanelId | null>(null);
   const [activeView, setActiveView] = useState<"2d" | "3d">("3d");
+  const [panelTextures, setPanelTextures] = useState<Record<PanelId, string>>({});
 
   // Update model when package type or dimensions change
   useEffect(() => {
@@ -69,6 +70,24 @@ export default function Packaging() {
     setSelectedPanelId(panelId);
   };
 
+  const handleTextureGenerated = (panelId: PanelId, textureUrl: string) => {
+    setPanelTextures((prev) => ({
+      ...prev,
+      [panelId]: textureUrl,
+    }));
+    // Update panel state in model
+    setPackageModel((prev) => ({
+      ...prev,
+      panelStates: {
+        ...prev.panelStates,
+        [panelId]: {
+          ...prev.panelStates[panelId],
+          textureUrl,
+        },
+      },
+    }));
+  };
+
   return (
     <div className="h-screen bg-background flex flex-col overflow-hidden">
       <div className="flex-1 flex overflow-hidden">
@@ -93,6 +112,7 @@ export default function Packaging() {
                   selectedPanelId={selectedPanelId}
                   onPanelSelect={handlePanelSelect}
                   color={selectedColor}
+                  panelTextures={panelTextures}
                 />
 
               </div>
@@ -110,7 +130,11 @@ export default function Packaging() {
           {/* Chat Section - Pinned to Top */}
           <div className="border-b border-border p-4 flex-shrink-0 bg-muted/10">
             <h3 className="text-xs font-medium text-muted-foreground mb-2">AI Assistant</h3>
-            <AIChatPanel />
+            <AIChatPanel 
+              selectedPanelId={selectedPanelId}
+              packageModel={packageModel}
+              onTextureGenerated={handleTextureGenerated}
+            />
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 flex flex-col space-y-4">
@@ -165,17 +189,22 @@ export default function Packaging() {
                     <Button
                       key={panel.id}
                       variant={selectedPanelId === panel.id ? "default" : "outline"}
-                      className="text-xs"
+                      className="text-xs relative"
                       size="sm"
                       onClick={() => handlePanelSelect(panel.id === selectedPanelId ? null : panel.id)}
                     >
                       {panel.name}
+                      {panelTextures[panel.id] && (
+                        <span className="ml-1 text-[10px]">✨</span>
+                      )}
                     </Button>
                   ))}
                 </div>
                 {selectedPanelId && (
                   <div className="mt-2 p-2 bg-muted rounded text-xs">
-                    <p className="font-medium">{packageModel.panels.find((p) => p.id === selectedPanelId)?.name}</p>
+                    <p className="font-medium">
+                      {packageModel.panels.find((p) => p.id === selectedPanelId)?.name}
+                    </p>
                     <p className="text-muted-foreground mt-1">
                       {packageModel.panels.find((p) => p.id === selectedPanelId)?.description}
                     </p>

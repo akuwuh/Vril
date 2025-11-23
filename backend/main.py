@@ -1,7 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.endpoints.trellis.router import router as trellis_router
-from app.endpoints.product.router import router as product_router
+from app.endpoints.packaging.router import router as packaging_router
 import logging
 
 # Configure logging
@@ -21,9 +20,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
-app.include_router(trellis_router)
-app.include_router(product_router)
+# Include routers - make optional since they may have missing dependencies
+try:
+    from app.endpoints.trellis.router import router as trellis_router
+    app.include_router(trellis_router)
+    logging.info("Trellis router loaded")
+except ImportError as e:
+    logging.warning(f"Trellis router not available (missing dependencies): {e}")
+
+try:
+    from app.endpoints.product.router import router as product_router
+    app.include_router(product_router)
+    logging.info("Product router loaded")
+except ImportError as e:
+    logging.warning(f"Product router not available (missing dependencies): {e}")
+
+# Packaging router is required for the chat panel feature
+app.include_router(packaging_router)
+logging.info("Packaging router loaded")
 
 @app.get("/")
 def read_root():

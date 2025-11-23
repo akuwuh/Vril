@@ -6,22 +6,53 @@ import { Textarea } from "@/components/ui/textarea";
 import { Loader2, RotateCcw } from "lucide-react";
 import { editProduct, getProductStatus, rewindProduct } from "@/lib/product-api";
 import { ProductState, ProductStatus } from "@/lib/product-types";
+import type { PanelId, PackageModel } from "@/lib/packaging-types";
+import { usePanelTexture } from "@/hooks/usePanelTexture";
 
-interface AIChatPanelProps {
+// Product editing props
+interface ProductAIChatPanelProps {
   productState: ProductState | null;
   isEditInProgress: boolean;
   onEditStart: () => void;
   onEditComplete: () => Promise<void> | void;
   onEditError: () => void;
+  selectedPanelId?: never;
+  packageModel?: never;
+  onTextureGenerated?: never;
 }
 
-export function AIChatPanel({
+// Packaging texture generation props
+interface PackagingAIChatPanelProps {
+  selectedPanelId?: PanelId | null;
+  packageModel?: PackageModel;
+  onTextureGenerated?: (panelId: PanelId, textureUrl: string) => void;
+  productState?: never;
+  isEditInProgress?: never;
+  onEditStart?: never;
+  onEditComplete?: never;
+  onEditError?: never;
+}
+
+type AIChatPanelProps = ProductAIChatPanelProps | PackagingAIChatPanelProps;
+
+export function AIChatPanel(props: AIChatPanelProps) {
+  // Determine if this is product editing or packaging texture generation
+  const isProductMode = "productState" in props;
+  
+  if (isProductMode) {
+    return <ProductAIChatPanel {...props} />;
+  } else {
+    return <PackagingAIChatPanel {...props} />;
+  }
+}
+
+function ProductAIChatPanel({
   productState,
   isEditInProgress,
   onEditStart,
   onEditComplete,
   onEditError,
-}: AIChatPanelProps) {
+}: ProductAIChatPanelProps) {
   const [prompt, setPrompt] = useState("");
   const [editStatus, setEditStatus] = useState<ProductStatus | null>(null);
   const [isMounted, setIsMounted] = useState(false);
@@ -258,3 +289,229 @@ export function AIChatPanel({
   );
 }
 
+function PackagingAIChatPanel({ 
+  selectedPanelId, 
+  packageModel,
+  onTextureGenerated 
+}: PackagingAIChatPanelProps) {
+  const [prompt, setPrompt] = useState("");
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [history, setHistory] = useState<Array<{ prompt: string; response: string }>>([]);
+  const { generateTexture, error } = usePanelTexture();
+
+  const handleSubmit = async () => {
+    console.log("[AIChatPanel] handleSubmit called", { prompt, selectedPanelId, hasPackageModel: !!packageModel });
+    
+    if (!prompt.trim()) {
+      console.log("[AIChatPanel] Prompt is empty, returning");
+      return;
+    }
+
+    // If no panel is selected, show error
+    if (!selectedPanelId) {
+      console.log("[AIChatPanel] No panel selected");
+      setHistory([
+        ...history,
+        {
+          prompt,
+          response: "Please select a panel first to apply changes.",
+        },
+      ]);
+      setPrompt("");
+      return;
+    }
+
+    if (!packageModel) {
+      console.log("[AIChatPanel] No package model");
+      setHistory([
+        ...history,
+        {
+          prompt,
+          response: "Package model not available.",
+        },
+      ]);
+      setPrompt("");
+      return;
+    }
+
+    setIsProcessing(true);
+    console.log("[AIChatPanel] Starting texture generation...");
+
+    try {
+      // Calculate panel dimensions
+      const panel = packageModel.panels.find((p) => p.id === selectedPanelId);
+      if (!panel) {
+        throw new Error("Panel not found");
+      }
+
+      let panelDimensions: { width: number; height: number };
+      
+      if (packageModel.type === "box") {
+        const { width, height, depth } = packageModel.dimensions;
+        if (selectedPanelId === "front" || selectedPanelId === "back") {
+          panelDimensions = { width, height };
+        } else if (selectedPanelId === "left" || selectedPanelId === "right") {
+          panelDimensions = { width: depth, height };
+        } else {
+          panelDimensions = { width, height: depth };
+        }
+      } else {
+        // Cylinder
+        const { width, height } = packageModel.dimensions;
+        if (selectedPanelId === "body") {
+          const circumference = Math.PI * width;
+          panelDimensions = { width: circumference, height };
+        } else {
+          const radius = width / 2;
+          panelDimensions = { width: radius * 2, height: radius * 2 };
+        }
+      }
+
+      console.log("[AIChatPanel] Calling generateTexture with:", {
+        panel_id: selectedPanelId,
+        prompt: prompt.trim(),
+        package_type: packageModel.type,
+        panel_dimensions: panelDimensions,
+      });
+
+      // Test backend connectivity first - try both localhost and 127.0.0.1
+      let backendReachable = false;
+      const testUrls = ["http://127.0.0.1:8000/health", "http://localhost:8000/health"];
+      
+      for (const testUrl of testUrls) {
+        try {
+          const testResponse = await fetch(testUrl);
+          if (testResponse.ok) {
+            console.log(`[AIChatPanel] Backend connectivity test passed using ${testUrl}`);
+            backendReachable = true;
+            break;
+          }
+        } catch (testError) {
+          console.warn(`[AIChatPanel] Failed to connect to ${testUrl}:`, testError);
+        }
+      }
+      
+      if (!backendReachable) {
+        console.error("[AIChatPanel] Backend connectivity test failed for all URLs");
+        setHistory([
+          ...history,
+          {
+            prompt,
+            response: `Cannot connect to backend. Make sure it's running on http://127.0.0.1:8000 or http://localhost:8000. Check the backend terminal for errors.`,
+          },
+        ]);
+        setPrompt("");
+        setIsProcessing(false);
+        return;
+      }
+
+      // Generate texture using the prompt
+      const texture = await generateTexture({
+        panel_id: selectedPanelId,
+        prompt: prompt.trim(),
+        package_type: packageModel.type,
+        panel_dimensions: panelDimensions,
+        package_dimensions: packageModel.dimensions,
+      });
+
+      console.log("[AIChatPanel] Texture generation result:", texture ? "success" : "failed", { error });
+
+      if (texture) {
+        console.log("[AIChatPanel] Texture generated successfully, calling onTextureGenerated");
+        setHistory([
+          ...history,
+          {
+            prompt,
+            response: `Successfully applied "${prompt}" to the ${panel.name} panel.`,
+          },
+        ]);
+        onTextureGenerated?.(selectedPanelId, texture.texture_url);
+      } else {
+        const errorMsg = error || "Failed to generate texture. Please try again.";
+        console.error("[AIChatPanel] Texture generation failed:", errorMsg);
+        setHistory([
+          ...history,
+          {
+            prompt,
+            response: errorMsg,
+          },
+        ]);
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "An error occurred";
+      console.error("[AIChatPanel] Error in handleSubmit:", err);
+      setHistory([
+        ...history,
+        {
+          prompt,
+          response: `Error: ${errorMessage}`,
+        },
+      ]);
+    } finally {
+      setPrompt("");
+      setIsProcessing(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4 flex-1 flex flex-col">
+      {/* Prompt Input */}
+      <div className="space-y-2">
+        {!selectedPanelId && (
+          <p className="text-xs text-muted-foreground mb-1">
+            Select a panel first to apply changes
+          </p>
+        )}
+        <Textarea
+          placeholder={selectedPanelId ? "Describe changes (e.g., 'turn it black', 'add stripes')..." : "Select a panel first..."}
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          className="min-h-[80px] resize-none text-sm"
+          disabled={isProcessing || !selectedPanelId}
+        />
+        <Button 
+          onClick={(e) => {
+            e.preventDefault();
+            console.log("[AIChatPanel] Button clicked");
+            handleSubmit();
+          }} 
+          disabled={!prompt.trim() || isProcessing || !selectedPanelId} 
+          variant="outline" 
+          className="w-full" 
+          size="sm"
+        >
+          {isProcessing ? (
+            <>
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              Processing...
+            </>
+          ) : (
+            "Apply Changes"
+          )}
+        </Button>
+      </div>
+
+      {isProcessing && (
+        <div className="text-xs text-muted-foreground p-2 bg-muted rounded">
+          Generating texture... This may take 10-30 seconds.
+        </div>
+      )}
+
+      {history.length > 0 && (
+        <div className="space-y-2 flex-1 flex flex-col min-h-0">
+          <div className="space-y-2 overflow-y-auto flex-1">
+            {history
+              .slice()
+              .reverse()
+              .map((item, i) => (
+                <div key={i} className="text-xs p-2.5 bg-muted rounded-lg border-2 border-black">
+                  <p className="font-medium mb-1">{item.prompt}</p>
+                  <p className="text-muted-foreground">{item.response}</p>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

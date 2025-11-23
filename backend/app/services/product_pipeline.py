@@ -7,7 +7,13 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from app.integrations.trellis import trellis_service
+# Make trellis optional - only needed for product generation
+try:
+    from app.integrations.trellis import trellis_service
+    TRELLIS_AVAILABLE = True
+except ImportError:
+    trellis_service = None
+    TRELLIS_AVAILABLE = False
 from app.integrations.gemini import gemini_image_service
 from app.models.product_state import (
     ProductIteration,
@@ -139,6 +145,8 @@ class ProductPipelineService:
 
     async def _generate_trellis_model(self, images: List[str]) -> Dict[str, Any]:
         """Call Trellis via the existing integration in a background thread."""
+        if not TRELLIS_AVAILABLE or not trellis_service:
+            raise RuntimeError("Trellis service is not available. Please install fal_client dependency.")
         
         def progress_callback(status: str, progress: int, message: str):
             """Update ProductStatus with Trellis progress in real-time."""
