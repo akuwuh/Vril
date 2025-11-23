@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, RotateCcw } from "lucide-react";
 import { editProduct, getProductStatus, rewindProduct } from "@/lib/product-api";
+import { clearCachedModel } from "@/lib/model-cache";
 import { ProductState, ProductStatus } from "@/lib/product-types";
 import type { PanelId, PackageModel } from "@/lib/packaging-types";
 import { usePanelTexture } from "@/hooks/usePanelTexture";
@@ -40,10 +41,9 @@ export function AIChatPanel(props: AIChatPanelProps) {
   const isProductMode = "productState" in props;
   
   if (isProductMode) {
-    return <ProductAIChatPanel {...props} />;
-  } else {
-    return <PackagingAIChatPanel {...props} />;
+    return <ProductAIChatPanel {...(props as ProductAIChatPanelProps)} />;
   }
+  return <PackagingAIChatPanel {...(props as PackagingAIChatPanelProps)} />;
 }
 
 function ProductAIChatPanel({
@@ -155,6 +155,10 @@ function ProductAIChatPanel({
     try {
       setRewindTarget(iterationIndex);
       await rewindProduct(iterationIndex);
+      if (productState?.iterations?.length) {
+        const staleIterations = productState.iterations.slice(iterationIndex + 1);
+        await Promise.all(staleIterations.map((iteration) => clearCachedModel(iteration.created_at)));
+      }
       await onEditComplete();
     } catch (error) {
       console.error("Rewind failed:", error);

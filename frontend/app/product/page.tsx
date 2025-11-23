@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -15,11 +15,14 @@ import { AIChatPanel } from "@/components/AIChatPanel";
 import { useLoading } from "@/providers/LoadingProvider";
 import { getProductState } from "@/lib/product-api";
 import { ProductState } from "@/lib/product-types";
+import { getCachedModelUrl, clearCachedModel } from "@/lib/model-cache";
 
 export default function ProductPage() {
   const { stopLoading } = useLoading();
   const [productState, setProductState] = useState<ProductState | null>(null);
   const [currentModelUrl, setCurrentModelUrl] = useState<string>();
+  const [currentIterationId, setCurrentIterationId] = useState<string | null>(null);
+  const objectUrlRef = useRef<string | null>(null);
   const [selectedColor, setSelectedColor] = useState("#60a5fa");
   const [selectedTexture, setSelectedTexture] = useState("matte");
   const [lightingMode, setLightingMode] = useState<"studio" | "sunset" | "warehouse" | "forest">("studio");
@@ -28,44 +31,55 @@ export default function ProductPage() {
   const [autoRotate, setAutoRotate] = useState(true);
   const [isEditInProgress, setIsEditInProgress] = useState(false);
 
+  const applyModelUrl = useCallback((url?: string, iterationId?: string) => {
+    if (objectUrlRef.current && objectUrlRef.current.startsWith("blob:")) {
+      URL.revokeObjectURL(objectUrlRef.current);
+    }
+    objectUrlRef.current = url && url.startsWith("blob:") ? url : null;
+    setCurrentModelUrl(url);
+    if (iterationId) {
+      setCurrentIterationId(iterationId);
+    }
+  }, []);
+
   const hydrateProductState = useCallback(async () => {
     try {
       const state = await getProductState();
       setProductState(state);
-      if (state.trellis_output?.model_file) {
-        const latestIteration = state.iterations.at(-1);
-        const cacheKey = latestIteration ? `model_cache_${latestIteration.created_at}` : null;
-
-        if (cacheKey && typeof window !== "undefined") {
-          const cachedUrl = localStorage.getItem(cacheKey);
-          const effectiveUrl = cachedUrl ?? state.trellis_output.model_file;
-          setCurrentModelUrl(effectiveUrl);
-
-          if (!cachedUrl) {
-            try {
-              localStorage.setItem(cacheKey, state.trellis_output.model_file);
-            } catch {
-              // Ignore storage exceptions (e.g., quota)
-            }
-          }
-        } else {
-          setCurrentModelUrl(state.trellis_output.model_file);
+      const latestIteration = state.iterations.at(-1);
+      const remoteModelUrl = state.trellis_output?.model_file;
+      if (latestIteration && remoteModelUrl) {
+        const iterationId = latestIteration.created_at;
+        try {
+          const cachedUrl = await getCachedModelUrl(iterationId, remoteModelUrl);
+          applyModelUrl(cachedUrl, iterationId);
+        } catch (cacheError) {
+          console.error("Model cache fetch failed, using remote URL:", cacheError);
+          applyModelUrl(remoteModelUrl, iterationId);
         }
+      } else if (!remoteModelUrl) {
+        applyModelUrl("", undefined);
       }
     } catch (error) {
       console.error("Failed to load product state:", error);
     }
-  }, []);
+  }, [applyModelUrl]);
 
   useEffect(() => {
-    hydrateProductState().finally(() => stopLoading());
+    let isMounted = true;
+    hydrateProductState().finally(() => {
+      if (isMounted) {
+        stopLoading();
+      }
+    });
+    return () => {
+      isMounted = false;
+      if (objectUrlRef.current && objectUrlRef.current.startsWith("blob:")) {
+        URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = null;
+      }
+    };
   }, [hydrateProductState, stopLoading]);
-
-  useEffect(() => {
-    if (productState?.trellis_output?.model_file) {
-      setCurrentModelUrl(productState.trellis_output.model_file);
-    }
-  }, [productState?.trellis_output?.model_file]);
 
   // Reset zoom action after it's been processed
   useEffect(() => {
