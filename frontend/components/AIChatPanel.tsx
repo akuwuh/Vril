@@ -28,6 +28,8 @@ interface PackagingAIChatPanelProps {
   selectedPanelId?: PanelId | null;
   packageModel?: PackageModel;
   onTextureGenerated?: (panelId: PanelId, textureUrl: string) => void;
+  packagingState?: any; // PackagingState from backend
+  isGenerating?: boolean; // Parent tracks if generation is in progress
   productState?: never;
   isEditInProgress?: never;
   onEditStart?: never;
@@ -354,7 +356,9 @@ function ProductAIChatPanel({
 function PackagingAIChatPanel({ 
   selectedPanelId, 
   packageModel,
-  onTextureGenerated 
+  onTextureGenerated,
+  packagingState,
+  isGenerating
 }: PackagingAIChatPanelProps) {
   const [prompt, setPrompt] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
@@ -362,6 +366,10 @@ function PackagingAIChatPanel({
   const [referenceMockup, setReferenceMockup] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
   const { generateTexture, generateAllTextures, bulkGenerating, error } = usePanelTexture();
+  
+  // Use parent's isGenerating state OR local bulkGenerating/isProcessing
+  const showGenerating = isGenerating || bulkGenerating || isProcessing;
+  const showBulkGenerating = (packagingState?.bulk_generation_in_progress) || bulkGenerating;
 
   // Validate prompt in real-time - memoized for performance
   const validatePrompt = useCallback((text: string) => {
@@ -763,7 +771,7 @@ function PackagingAIChatPanel({
         className={`min-h-[70px] resize-none text-sm ${
             validationError ? "border-red-500 border-2 focus:border-red-600" : ""
           }`}
-        disabled={isProcessing || bulkGenerating}
+        disabled={isProcessing || showBulkGenerating}
         />
         
         {/* Validation error */}
@@ -781,12 +789,12 @@ function PackagingAIChatPanel({
                   accept="image/*"
                   onChange={handleMockupUpload}
           className="hidden"
-          disabled={isProcessing || bulkGenerating}
+          disabled={isProcessing || showBulkGenerating}
                 />
         <label
           htmlFor="reference-upload"
           className={`text-xs font-semibold px-3 py-1.5 rounded border-2 border-black bg-background hover:bg-muted transition-colors cursor-pointer ${
-            isProcessing || bulkGenerating ? "opacity-50 cursor-not-allowed" : ""
+            isProcessing || showBulkGenerating ? "opacity-50 cursor-not-allowed" : ""
           }`}
         >
           Upload Reference
@@ -812,12 +820,12 @@ function PackagingAIChatPanel({
             console.log("[AIChatPanel] Generate panel button clicked", { prompt: prompt.trim(), isProcessing, selectedPanelId });
             handleSubmit();
           }}
-          disabled={!prompt.trim() || isProcessing || bulkGenerating || !selectedPanelId || !!validationError}
+          disabled={!prompt.trim() || isProcessing || showBulkGenerating || !selectedPanelId || !!validationError}
           variant="outline"
           className="w-full text-xs font-semibold"
           size="sm"
         >
-          {isProcessing && !bulkGenerating ? (
+          {isProcessing && !showBulkGenerating ? (
             <>
               <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
               Generating...
@@ -833,12 +841,12 @@ function PackagingAIChatPanel({
             console.log("[AIChatPanel] Generate all button clicked", { prompt: prompt.trim(), isProcessing, bulkGenerating });
             handleGenerateAll();
           }}
-          disabled={!prompt.trim() || isProcessing || bulkGenerating || !!validationError}
+          disabled={!prompt.trim() || isProcessing || showBulkGenerating || !!validationError}
           variant="default"
           className="w-full text-xs font-semibold"
           size="sm"
         >
-          {bulkGenerating ? (
+          {showBulkGenerating ? (
             <>
               <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
               Generating All...
@@ -850,13 +858,26 @@ function PackagingAIChatPanel({
       </div>
 
       {/* Progress Status */}
-      {(isProcessing || bulkGenerating) && (
-        <div className="text-xs p-2.5 bg-muted rounded border-2 border-black">
-          {bulkGenerating ? (
-            <div className="space-y-0.5">
-              <p className="font-semibold">Generating all panels</p>
+      {(isProcessing || showBulkGenerating) && (
+        <div className="text-xs p-2.5 bg-muted rounded border-2 border-black space-y-1">
+          {showBulkGenerating ? (
+            <>
+              <div className="flex items-center gap-2">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <p className="font-semibold">Generating all panels</p>
+              </div>
+              {packagingState?.generating_panel && (
+                <p className="text-muted-foreground">
+                  Current: {packagingState.generating_panel} panel
+                </p>
+              )}
+              {packagingState?.generating_panels && packagingState.generating_panels.length > 0 && (
+                <p className="text-muted-foreground">
+                  {packagingState.generating_panels.length} panel(s) remaining
+                </p>
+              )}
               <p className="text-muted-foreground">This may take 1-3 minutes</p>
-            </div>
+            </>
           ) : (
             <p className="text-muted-foreground">Generating (10-30 seconds)</p>
           )}

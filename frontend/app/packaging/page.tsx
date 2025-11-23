@@ -293,6 +293,20 @@ function Packaging() {
                   panelTextures={panelTextures}
                 />
 
+                {isGenerating && packagingState && (
+                  <div className="absolute top-4 left-4 z-40 bg-black/80 text-white px-4 py-3 rounded-lg shadow-lg">
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      <div>
+                        <p className="text-sm font-semibold">Generating Textures</p>
+                        {packagingState.generating_panel && (
+                          <p className="text-xs opacity-80">Current: {packagingState.generating_panel}</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {showTextureNotification?.show && (
                   <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 animate-in fade-in slide-in-from-top-2 duration-300">
                     <div className="bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-3 border-2 border-green-700">
@@ -332,6 +346,8 @@ function Packaging() {
                 selectedPanelId={selectedPanelId}
                 packageModel={packageModel}
                 onTextureGenerated={handleTextureGenerated}
+                packagingState={packagingState}
+                isGenerating={isGenerating}
               />
             </div>
             {/* View Toggle Buttons */}
