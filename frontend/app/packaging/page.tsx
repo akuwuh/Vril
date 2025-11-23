@@ -9,7 +9,7 @@ import { Slider } from "@/components/ui/slider";
 import { DielineEditor } from "@/components/dieline-editor";
 import { PackageViewer3D } from "@/components/package-viewer-3d";
 import { AIChatPanel } from "@/components/AIChatPanel";
-import { CylinderIcon, Box } from "lucide-react";
+import { CylinderIcon, Box, CheckCircle2 } from "lucide-react";
 import {
   type PackageType,
   type PackageDimensions,
@@ -32,6 +32,7 @@ export default function Packaging() {
   const [selectedPanelId, setSelectedPanelId] = useState<PanelId | null>(null);
   const [activeView, setActiveView] = useState<"2d" | "3d">("3d");
   const [panelTextures, setPanelTextures] = useState<Record<PanelId, string>>({});
+  const [showTextureNotification, setShowTextureNotification] = useState<{ panelId: PanelId; show: boolean } | null>(null);
 
   // Update model when package type or dimensions change
   useEffect(() => {
@@ -67,14 +68,24 @@ export default function Packaging() {
   };
 
   const handlePanelSelect = (panelId: PanelId | null) => {
+    console.log("[Packaging] handlePanelSelect called with:", panelId);
     setSelectedPanelId(panelId);
   };
 
   const handleTextureGenerated = (panelId: PanelId, textureUrl: string) => {
-    setPanelTextures((prev) => ({
-      ...prev,
-      [panelId]: textureUrl,
-    }));
+    console.log(`[Packaging] 🎨 Texture generated for ${panelId}`)
+    console.log(`[Packaging] Texture URL length: ${textureUrl.length}`)
+    console.log(`[Packaging] Texture preview: ${textureUrl.substring(0, 100)}...`)
+    
+    setPanelTextures((prev) => {
+      const updated = {
+        ...prev,
+        [panelId]: textureUrl,
+      };
+      console.log(`[Packaging] Updated panelTextures:`, Object.keys(updated));
+      return updated;
+    });
+    
     // Update panel state in model
     setPackageModel((prev) => ({
       ...prev,
@@ -86,6 +97,12 @@ export default function Packaging() {
         },
       },
     }));
+
+    // Show notification
+    setShowTextureNotification({ panelId, show: true });
+    setTimeout(() => {
+      setShowTextureNotification(null);
+    }, 3000);
   };
 
   return (
@@ -114,6 +131,21 @@ export default function Packaging() {
                   color={selectedColor}
                   panelTextures={panelTextures}
                 />
+
+                {/* Texture Applied Notification */}
+                {showTextureNotification?.show && (
+                  <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 animate-in fade-in slide-in-from-top-2 duration-300">
+                    <div className="bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-3 border-2 border-green-700">
+                      <CheckCircle2 className="w-5 h-5" />
+                      <div>
+                        <p className="font-semibold">Texture Applied! 🎨</p>
+                        <p className="text-sm opacity-90">
+                          {packageModel.panels.find(p => p.id === showTextureNotification.panelId)?.name} panel updated
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
               </div>
             )}

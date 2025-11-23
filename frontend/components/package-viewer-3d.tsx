@@ -42,24 +42,8 @@ function BoxPackage3D({
     }
   })
 
-  // Create base materials array - will be updated by useEffect
+  // Create materials array that updates when textures change
   const materials = useMemo(() => {
-    return Array.from({ length: 6 }, () => 
-      new THREE.MeshStandardMaterial({
-        color: color,
-        roughness: 0.3,
-        metalness: 0.1,
-      })
-    )
-  }, [color])
-
-  // Update materials directly on the mesh when textures or selection change
-  useEffect(() => {
-    if (!meshRef.current) return
-    
-    const mesh = meshRef.current
-    if (!mesh.material || !Array.isArray(mesh.material)) return
-    
     const faceToPanelMap: Record<number, PanelId> = {
       0: "right",
       1: "left",
@@ -68,48 +52,47 @@ function BoxPackage3D({
       4: "front",
       5: "back",
     }
-    
+
     const textureLoader = new THREE.TextureLoader()
-    
-    // Update each material
-    for (let i = 0; i < 6; i++) {
-      const material = mesh.material[i] as THREE.MeshStandardMaterial
-      if (!material) continue
-      
+
+    return Array.from({ length: 6 }, (_, i) => {
       const panelId = faceToPanelMap[i]
       const textureUrl = panelTextures[panelId]
-      
-      // Update base color
-      material.color.set(color)
-      
-      // Update selection highlight
+
+      const material = new THREE.MeshStandardMaterial({
+        color: color,
+        roughness: 0.3,
+        metalness: 0.1,
+      })
+
+      // Set selection highlight
       if (panelId === selectedPanelId) {
         material.emissive.set("#fbbf24")
         material.emissiveIntensity = 0.3
-      } else {
-        material.emissive.set(0, 0, 0)
-        material.emissiveIntensity = 0
       }
-      
-      // Update texture
+
+      // Load texture IMMEDIATELY if available
       if (textureUrl) {
+        console.log(`[BoxPackage3D] 🎨 Loading texture for ${panelId}`)
         textureLoader.load(
           textureUrl,
           (texture) => {
             texture.flipY = false
+            texture.wrapS = THREE.ClampToEdgeWrapping
+            texture.wrapT = THREE.ClampToEdgeWrapping
             material.map = texture
             material.needsUpdate = true
+            console.log(`[BoxPackage3D] ✅ Texture applied to ${panelId}`)
           },
           undefined,
           (error) => {
-            console.error(`[BoxPackage3D] Failed to load texture for ${panelId}:`, error)
+            console.error(`[BoxPackage3D] ❌ Failed to load texture for ${panelId}:`, error)
           }
         )
-      } else {
-        material.map = null
-        material.needsUpdate = true
       }
-    }
+
+      return material
+    })
   }, [panelTextures, selectedPanelId, color])
 
   const handleClick = (event: any) => {
