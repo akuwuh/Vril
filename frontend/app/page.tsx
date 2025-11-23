@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ArrowRight, Upload, Boxes, X } from "lucide-react";
 import { useLoading } from "@/providers/LoadingProvider";
+import { createProduct, getProductStatus } from "@/lib/product-api";
 import { Bungee } from "next/font/google";
 
 const bungee = Bungee({
@@ -14,9 +15,12 @@ const bungee = Bungee({
   variable: "--font-bungee",
 });
 
+const POLL_INTERVAL_MS = 5000;
+const MAX_WAIT_MS = 10 * 60 * 1000; // 10 minutes
+
 export default function Home() {
   const router = useRouter();
-  const { startLoading } = useLoading();
+  const { startLoading, stopLoading } = useLoading();
   const [prompt, setPrompt] = useState("");
   const [isFocused, setIsFocused] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -57,34 +61,35 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [isLoaded, productIdeas.length]);
 
+  const pollUntilComplete = async () => {
+    const startTime = Date.now();
+    while (Date.now() - startTime < MAX_WAIT_MS) {
+      const status = await getProductStatus();
+      if (status.status === "complete") {
+        return;
+      }
+      if (status.status === "error") {
+        throw new Error(status.error || status.message || "Generation failed");
+      }
+      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+    }
+    throw new Error("Generation timed out");
+  };
+
   const handleStart = async () => {
     if (!prompt.trim()) return;
     
     setIsGenerating(true);
-    setTimeout(() => startLoading(), 100); // Small delay before showing loading screen
+  	startLoading();
 
     try {
-      // Mock API call to backend
-      // Using a minimum delay to show the animation
-      const apiCall = fetch("http://localhost:8000/product/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, images }),
-      }).catch(e => {
-        console.log("Mock API call failed (expected if backend not running):", e);
-        return null;
-      });
-      
-      const delay = new Promise(resolve => setTimeout(resolve, 2500)); // Increased slightly to show off animation
-      
-      await Promise.all([apiCall, delay]);
-      
-      // Navigate immediately - the product page will handle the exit animation
-      router.push("/product");
-      
+  	  await createProduct(prompt.trim(), 1);
+  	  await pollUntilComplete();
+  	  router.push("/product");
     } catch (error) {
       console.error("Generation failed:", error);
       setIsGenerating(false);
+  	  stopLoading();
     }
   };
 

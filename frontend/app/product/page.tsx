@@ -1,9 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import Link from "next/link";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,19 +9,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ArrowLeft, Upload, Sparkles, RotateCw, Download, ZoomIn, ZoomOut, Play, Pause, Settings, Sun, Warehouse, Eye, EyeOff, Package, Image, Box, Boxes } from "lucide-react";
+import { ZoomIn, ZoomOut, Play, Pause, Settings, Sun, Warehouse, Eye, EyeOff } from "lucide-react";
 import ModelViewer from "@/components/ModelViewer";
 import { AIChatPanel } from "@/components/AIChatPanel";
 import { useLoading } from "@/providers/LoadingProvider";
+import { getProductState } from "@/lib/product-api";
+import { ProductState } from "@/lib/product-types";
 
 export default function ProductPage() {
   const { stopLoading } = useLoading();
-
-  useEffect(() => {
-    // Signal that we've arrived so the loader can exit
-    stopLoading();
-  }, [stopLoading]);
-
+  const [productState, setProductState] = useState<ProductState | null>(null);
   const [currentModelUrl, setCurrentModelUrl] = useState<string>();
   const [selectedColor, setSelectedColor] = useState("#60a5fa");
   const [selectedTexture, setSelectedTexture] = useState("matte");
@@ -31,6 +26,29 @@ export default function ProductPage() {
   const [displayMode, setDisplayMode] = useState<"solid" | "wireframe">("solid");
   const [zoomAction, setZoomAction] = useState<"in" | "out" | null>(null);
   const [autoRotate, setAutoRotate] = useState(true);
+  const [isEditInProgress, setIsEditInProgress] = useState(false);
+
+  const hydrateProductState = useCallback(async () => {
+    try {
+      const state = await getProductState();
+      setProductState(state);
+      if (state.trellis_output?.model_file) {
+        setCurrentModelUrl(state.trellis_output.model_file);
+      }
+    } catch (error) {
+      console.error("Failed to load product state:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    hydrateProductState().finally(() => stopLoading());
+  }, [hydrateProductState, stopLoading]);
+
+  useEffect(() => {
+    if (productState?.trellis_output?.model_file) {
+      setCurrentModelUrl(productState.trellis_output.model_file);
+    }
+  }, [productState?.trellis_output?.model_file]);
 
   // Reset zoom action after it's been processed
   useEffect(() => {
@@ -109,14 +127,23 @@ export default function ProductPage() {
           </div>
         </div>
 
-        <div className="w-[380px] border-l-2 border-black bg-card overflow-hidden flex flex-col flex-shrink-0">
-          <div className="border-b-2 border-black flex-shrink-0 px-4 py-3">
+        <div className="w-[380px] border-l-2 border-black bg-card overflow-hidden flex flex-col shrink-0">
+          <div className="border-b-2 border-black shrink-0 px-4 py-3">
             <h2 className="text-sm font-semibold">
               Chat
             </h2>
           </div>
           <div className="flex-1 overflow-y-auto p-4">
-            <AIChatPanel />
+            <AIChatPanel
+              productState={productState}
+              isEditInProgress={isEditInProgress}
+              onEditStart={() => setIsEditInProgress(true)}
+              onEditComplete={async () => {
+                await hydrateProductState();
+                setIsEditInProgress(false);
+              }}
+              onEditError={() => setIsEditInProgress(false)}
+            />
           </div>
         </div>
       </div>

@@ -108,3 +108,47 @@ async def fetch_product_status():
     return status.model_dump(mode="json")
 
 
+@router.post("/rewind/{iteration_index}")
+async def rewind_product(iteration_index: int):
+    """Revert the product state to a specific iteration."""
+    state = get_product_state()
+
+    if state.in_progress:
+        raise HTTPException(status_code=409, detail="Cannot rewind while generation is running")
+
+    if iteration_index < 0 or iteration_index >= len(state.iterations):
+        raise HTTPException(status_code=400, detail="Invalid iteration index")
+
+    target_iteration = state.iterations[iteration_index]
+    state.iterations = state.iterations[: iteration_index + 1]
+    state.images = target_iteration.images.copy()
+    state.trellis_output = target_iteration.trellis_output
+    state.latest_instruction = target_iteration.prompt
+    if target_iteration.type == "create":
+        state.prompt = target_iteration.prompt
+    state.mode = target_iteration.type
+    state.status = "idle"
+    state.message = "Rewound to previous version"
+    state.in_progress = False
+    state.last_error = None
+    save_product_state(state)
+
+    preview = None
+    if target_iteration.trellis_output and target_iteration.trellis_output.no_background_images:
+        preview = target_iteration.trellis_output.no_background_images[0]
+    status_payload = ProductStatus(
+        status="idle",
+        progress=0,
+        message="Rewound to previous version",
+        model_file=target_iteration.trellis_output.model_file if target_iteration.trellis_output else None,
+        preview_image=preview,
+    )
+    save_product_status(status_payload)
+
+    return {
+        "status": "rewound",
+        "iteration_index": iteration_index,
+        "total_iterations": len(state.iterations),
+    }
+
+
