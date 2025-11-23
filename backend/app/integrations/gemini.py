@@ -1,4 +1,3 @@
-import json
 import asyncio
 import logging
 import base64
@@ -6,10 +5,8 @@ from typing import Dict, Any, List, Optional
 
 from pydantic import ValidationError
 
-import google.generativeai as genai
 from google.genai import types
 from google.genai import Client as GenaiClient
-from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
 from app.core.config import settings
 
@@ -27,137 +24,6 @@ class SafetyError(GeminiError):
     """Content blocked by safety filters."""
     pass
 
-class GeminiChatService:
-    """Service for text-based chat and data extraction using Gemini."""
-    
-    def __init__(self):
-        if not settings.GEMINI_API_KEY:
-            logger.warning("GEMINI_API_KEY not found in settings")
-            self.configured = False
-        else:
-            genai.configure(api_key=settings.GEMINI_API_KEY)
-            self.configured = True
-        
-        self.pro_model = settings.GEMINI_MODEL
-        self.flash_model = settings.GEMINI_FLASH_MODEL
-        self.current_model = self.flash_model
-        
-        # No safety settings - disabled for unrestricted operation
-        self.safety_settings = {
-            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-        }
-        
-        self.request_count = 0
-        self.error_count = 0
-
-    def _get_generation_config(self, task_type: str = "default") -> Dict[str, Any]:
-        """Get generation config optimized for task type."""
-        base_config = {
-            "temperature": settings.GEMINI_TEMPERATURE,
-            "max_output_tokens": settings.GEMINI_MAX_TOKENS,
-        }
-
-        if task_type == "extraction":
-            base_config.update({"temperature": 0.1, "max_output_tokens": 4096})
-        elif task_type == "creative":
-            base_config.update({"temperature": 0.8, "max_output_tokens": 8192})
-        elif task_type == "analysis":
-            base_config.update({"temperature": 0.3, "max_output_tokens": 6144})
-
-        return base_config
-
-    async def generate_content(
-        self,
-        prompt: str,
-        task_type: str = "default",
-        response_schema: Optional[Dict[str, Any]] = None,
-        max_retries: int = None
-    ) -> Dict[str, Any]:
-        """
-        Generate content with retries and monitoring.
-        """
-        if not self.configured:
-            raise GeminiError("Gemini API key not configured")
-            
-        max_retries = max_retries or settings.GEMINI_MAX_RETRIES
-        model_name = self.flash_model
-        generation_config = self._build_generation_config(task_type, response_schema)
-
-        for attempt in range(max_retries):
-            try:
-                self.request_count += 1
-                model = genai.GenerativeModel(
-                    model_name=model_name,
-                    generation_config=generation_config,
-                    safety_settings=self.safety_settings,
-                )
-                
-                response = await model.generate_content_async(prompt)
-                parsed = self._parse_response(response, response_schema)
-                if parsed is not None:
-                    return parsed
-            
-            except Exception as e:  # noqa: BLE001
-                self.error_count += 1
-                logger.warning(f"Gemini attempt {attempt + 1} failed: {str(e)}")
-                if attempt == max_retries - 1:
-                    raise GeminiError(f"Max retries exceeded: {str(e)}")
-                await asyncio.sleep(2 ** attempt)
-                
-        return {"error": "Failed to generate content"}
-
-    def _build_generation_config(
-        self,
-        task_type: str,
-        response_schema: Optional[Dict[str, Any]],
-    ) -> Dict[str, Any]:
-        config = self._get_generation_config(task_type)
-        if response_schema:
-            config = {**config}
-            config.update(
-                {
-                    "response_mime_type": "application/json",
-                    "response_schema": response_schema,
-                }
-            )
-        return config
-
-    def _parse_response(
-        self,
-        response,
-        response_schema: Optional[Dict[str, Any]],
-    ) -> Optional[Dict[str, Any]]:
-        if not response.text:
-            return None
-        if not response_schema:
-            return {"text": response.text}
-        return self._parse_structured_response(response.text)
-
-    def _parse_structured_response(self, text: str) -> Optional[Dict[str, Any]]:
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            cleaned = self._strip_markdown_fence(text)
-            if not cleaned or cleaned == text:
-                logger.warning("JSON parse error for Gemini response")
-            try:
-                return json.loads(cleaned)
-            except json.JSONDecodeError:
-                return None
-
-    @staticmethod
-    def _strip_markdown_fence(text: str) -> str:
-        cleaned = text.strip()
-        if cleaned.startswith("```") and cleaned.endswith("```"):
-            lines = cleaned.split("\n")
-            if len(lines) > 2:
-                return "\n".join(lines[1:-1])
-        return cleaned
-
-
 class GeminiImageService:
     """Service for product asset generation using Gemini 3 Image API."""
     
@@ -167,67 +33,104 @@ class GeminiImageService:
         else:
             self.client = None
             logger.warning("Gemini API key not found for Image Service")
-        self.asset_model = settings.GEMINI_IMAGE_MODEL
-        self.default_thinking_level = settings.GEMINI_THINKING_LEVEL
+        
+        # Model references (workflow determines which to use)
+        self.flash_model = settings.GEMINI_FLASH_MODEL
+        self.pro_model = settings.GEMINI_PRO_MODEL
+        
+        # Image generation settings
         self.image_size = settings.GEMINI_IMAGE_SIZE
         self.aspect_ratio = settings.GEMINI_IMAGE_ASPECT_RATIO
+        
+        logger.info(f"[gemini-image] Initialized with Pro model: {self.pro_model}, Flash model: {self.flash_model}")
 
     def generate_product_images_sync(
         self,
         prompt: str,
-        image_count: int = 3,
+        workflow: str,
+        image_count: int = 1,
         reference_images: Optional[List[str]] = None,
-        thinking_level: Optional[str] = None,
     ) -> List[str]:
-        """Generate clean product views using Gemini 3 Image API (synchronous)."""
+        """Generate clean product views using Gemini Image API (synchronous).
+        
+        Args:
+            prompt: Description of the product or edit instruction
+            workflow: "create" or "edit" - determines model selection
+            image_count: Number of images to generate
+            reference_images: Reference images for edit workflow
+            
+        Returns:
+            List of base64-encoded image data URLs
+        """
         if not self.client:
             raise GeminiError("Gemini client not initialized for product images")
         
-        thinking = thinking_level or self.default_thinking_level
+        # Workflow-based model selection (hardcoded policy)
+        if workflow == "create":
+            model_to_use = self.pro_model
+            thinking = settings.GEMINI_THINKING_LEVEL
+            logger.info(f"[gemini] CREATE workflow: using {model_to_use} with thinking={thinking}")
+        elif workflow == "edit":
+            model_to_use = self.flash_model
+            thinking = None  # Flash doesn't support thinking
+            logger.info(f"[gemini] EDIT workflow: using {model_to_use} (thinking disabled)")
+        else:
+            raise ValueError(f"Unknown workflow: {workflow}. Expected 'create' or 'edit'")
+        
         valid_images = []
         
         # For /create flow: generate first image, then use it as reference for additional angles
         # For /edit flow: use provided reference_images for all generations
-        is_create_flow = not reference_images
+        is_create_flow = workflow == "create"
         
         for i in range(image_count):
             try:
                 # For create flow: first image establishes the product, subsequent use it as reference
                 if is_create_flow and i == 0:
                     # First view: establish the product design
-                    img = self._generate_single_image(prompt, None, thinking, angle_index=i)
+                    img = self._generate_single_image(prompt, None, thinking, model_to_use, angle_index=i)
                 elif is_create_flow and i > 0:
                     # Subsequent views: same product from different angles
-                    img = self._generate_single_image(prompt, valid_images[:1], thinking, angle_index=i)
+                    img = self._generate_single_image(prompt, valid_images[:1], thinking, model_to_use, angle_index=i)
                 else:
                     # Edit flow: use provided reference
-                    img = self._generate_single_image(prompt, reference_images, thinking, angle_index=i)
+                    img = self._generate_single_image(prompt, reference_images, thinking, model_to_use, angle_index=i)
                 
                 if img:
                     valid_images.append(img)
-                    logger.info(f"[gemini] Image {i+1}/{image_count} generated successfully")
+                    logger.info(f"[gemini] Image {i+1}/{image_count} generated successfully with model {model_to_use}")
                 else:
                     logger.warning(f"[gemini] Image {i+1}/{image_count} generation returned None")
             except Exception as exc:
                 logger.error(f"[gemini] Image {i+1}/{image_count} generation failed: {exc}")
         
-        logger.info(f"[gemini] Generated {len(valid_images)}/{image_count} valid product images")
+        logger.info(f"[gemini] Generated {len(valid_images)}/{image_count} valid product images using {model_to_use}")
         return valid_images
     
     async def generate_product_images(
         self,
         prompt: str,
-        image_count: int = 3,
+        workflow: str,
+        image_count: int = 1,
         reference_images: Optional[List[str]] = None,
-        thinking_level: Optional[str] = None,
     ) -> List[str]:
-        """Generate clean product views using Gemini 3 Image API (async wrapper)."""
+        """Generate clean product views using Gemini Image API (async wrapper).
+        
+        Args:
+            prompt: Description of the product or edit instruction
+            workflow: "create" or "edit" - determines model selection
+            image_count: Number of images to generate
+            reference_images: Reference images for edit workflow
+            
+        Returns:
+            List of base64-encoded image data URLs
+        """
         return await asyncio.to_thread(
             self.generate_product_images_sync,
             prompt,
+            workflow,
             image_count,
             reference_images,
-            thinking_level,
         )
 
     def _generate_single_image(
@@ -235,6 +138,7 @@ class GeminiImageService:
         prompt: str,
         reference_images: Optional[List[str]],
         thinking_level: Optional[str],
+        model: str,
         angle_index: int = 0,
     ) -> Optional[str]:
         # Define camera angles for multi-view 3D reconstruction
@@ -247,38 +151,30 @@ class GeminiImageService:
         angle_description = angles[angle_index] if angle_index < len(angles) else "alternate angle"
         
         # Enhance prompt for clean, 3D-ready product shots
+        # Following Gemini best practices: conversational prompts with clear intent
         if reference_images:
             # Subsequent views or edit flow: maintain consistency with reference
+            # Using image+text-to-image approach for consistency
             enhanced_prompt = (
-                f"Generate a product photograph matching the EXACT same product shown in the reference image.\n"
-                f"Show the product from a {angle_description}.\n\n"
-                f"Product description: {prompt}\n\n"
-                "Requirements:\n"
-                "- IDENTICAL product design, colors, materials, and details as the reference\n"
-                "- Clean, pure white background (#FFFFFF)\n"
-                "- Professional studio lighting with soft shadows\n"
-                "- Sharp focus on the product\n"
-                "- Clear, well-defined edges optimized for 3D model generation\n"
-                "- No text, watermarks, or distracting elements\n"
-                "- Product centered in frame\n"
-                "- Fill the frame with the product at maximum zoom WITHOUT cropping any part of it\n"
-                "- Product must be COMPLETELY visible with no parts cut off"
+                f"Create a professional product photograph of the exact same product shown in the reference image, "
+                f"photographed from a {angle_description}. {prompt}\n\n"
+                f"Match the reference image precisely in terms of design, colors, materials, and all details. "
+                f"Photograph the product on a clean white studio background with professional lighting that creates "
+                f"soft shadows. Ensure sharp focus throughout with well-defined edges. "
+                f"Center the product in the frame and fill the frame while keeping the entire product visible - "
+                f"no parts should be cropped or cut off. Avoid any text, watermarks, or distracting elements."
             )
         else:
             # First view: establish the product
+            # Using text-to-image with clear, natural description
             enhanced_prompt = (
-                f"Generate a high-quality product photograph of: {prompt}\n"
-                f"Camera angle: {angle_description}\n\n"
-                "Requirements:\n"
-                "- Clean, pure white background (#FFFFFF)\n"
-                "- Professional studio lighting with soft shadows\n"
-                "- Sharp focus on the product\n"
-                "- Clear, well-defined edges optimized for 3D model generation\n"
-                "- No text, watermarks, or distracting elements\n"
-                "- Product centered in frame\n"
-                "- Consistent design that can be photographed from multiple angles\n"
-                "- Fill the frame with the product at maximum zoom WITHOUT cropping any part of it\n"
-                "- Product must be COMPLETELY visible with no parts cut off"
+                f"Create a professional studio product photograph of {prompt}, "
+                f"shot from a {angle_description}. "
+                f"Photograph the product on a pure white background with professional studio lighting that creates "
+                f"soft, subtle shadows. Use sharp focus to capture clear, well-defined edges. "
+                f"Center the product in the frame and fill the frame while ensuring the entire product is visible - "
+                f"nothing should be cropped or cut off. The design should be consistent and suitable for viewing "
+                f"from multiple camera angles. Avoid any text overlays, watermarks, or distracting elements."
             )
         
         contents: List[types.Part | str] = [enhanced_prompt]
@@ -301,7 +197,7 @@ class GeminiImageService:
             except (AttributeError, ValidationError, TypeError) as exc:
                 logger.warning("Gemini image config not applied: %s", exc)
         response = self.client.models.generate_content(
-            model=self.asset_model,
+            model=model,
             contents=contents,
             config=types.GenerateContentConfig(**config_kwargs) if config_kwargs else None,
         )
@@ -338,6 +234,5 @@ def _image_to_part(image_str: str) -> Optional[types.Part]:
     return None
 
 
-# Initialize services
-gemini_chat_service = GeminiChatService()
+# Initialize service
 gemini_image_service = GeminiImageService()

@@ -1,40 +1,37 @@
 #!/bin/bash
 # Manual end-to-end test script for product pipeline
+# Hardcoded policy: Pro model for CREATE, Flash model for EDIT
+# 
 # Usage: 
-#   ./test_pipeline_manual.sh                    # Use default (gemini-3-pro-image-preview, 3 images)
-#   USE_FLASH=1 ./test_pipeline_manual.sh        # Use gemini-2.5-flash-exp with 1K images (3 images)
-#   QUICK=1 ./test_pipeline_manual.sh            # Quick test with 1 image only
-#   TEST_EDIT=1 ./test_pipeline_manual.sh        # Test both create AND edit flows
-#   USE_FLASH=1 QUICK=1 ./test_pipeline_manual.sh # Flash model with 1 image (fastest)
+#   ./test_pipeline_manual.sh                                # Default (Pro for create, Flash for edit)
+#   IMAGE_COUNT=3 ./test_pipeline_manual.sh                  # Test with 3 images
+#   TEST_EDIT=1 ./test_pipeline_manual.sh                    # Test both create AND edit flows
+#   GEMINI_PRO_MODEL=gemini-3-pro ./test_pipeline_manual.sh  # Test with alternate Pro model
+#   GEMINI_FLASH_MODEL=gemini-2.5-flash-exp ./test_pipeline_manual.sh  # Test with alternate Flash
 
 set -e
 
-# Image count configuration
-if [ "$QUICK" = "1" ]; then
-  IMAGE_COUNT=1
-  echo "⚡ QUICK MODE: Using 1 image only"
-else
-  IMAGE_COUNT=${IMAGE_COUNT:-3}
-  echo "📸 Using $IMAGE_COUNT images"
-fi
+# Image count configuration (default: 1)
+IMAGE_COUNT=${IMAGE_COUNT:-1}
+echo "📸 Using $IMAGE_COUNT image(s)"
 
 # Model configuration
-if [ "$USE_FLASH" = "1" ]; then
-  export GEMINI_IMAGE_MODEL="gemini-2.5-flash-exp"
-  export GEMINI_IMAGE_SIZE="1K"
-  export GEMINI_THINKING_LEVEL=""
-  echo "🔧 Using Flash 2.5 model (1K images, no thinking)"
-else
-  export GEMINI_IMAGE_MODEL="${GEMINI_IMAGE_MODEL:-gemini-3-pro-image-preview}"
-  export GEMINI_IMAGE_SIZE="${GEMINI_IMAGE_SIZE:-4K}"
-  export GEMINI_THINKING_LEVEL="${GEMINI_THINKING_LEVEL:-low}"
-  echo "🔧 Using Gemini 3 Pro model (${GEMINI_IMAGE_SIZE} images, thinking: ${GEMINI_THINKING_LEVEL})"
-fi
+# Pro model used for CREATE flow, Flash model used for EDIT flow (hardcoded policy)
+export GEMINI_PRO_MODEL="${GEMINI_PRO_MODEL:-gemini-3-pro-image-preview}"
+export GEMINI_FLASH_MODEL="${GEMINI_FLASH_MODEL:-gemini-2.5-flash-image}"
+export GEMINI_IMAGE_SIZE="${GEMINI_IMAGE_SIZE:-1K}"
+export GEMINI_THINKING_LEVEL="${GEMINI_THINKING_LEVEL:-low}"
+
+echo "🔧 Model configuration (workflow-based):"
+echo "   - CREATE: ${GEMINI_PRO_MODEL} (thinking: ${GEMINI_THINKING_LEVEL})"
+echo "   - EDIT: ${GEMINI_FLASH_MODEL} (thinking: disabled)"
+echo "   - Image size: ${GEMINI_IMAGE_SIZE}"
 
 # Restart backend with new env vars
 echo "♻️  Restarting backend with updated config..."
 docker compose -f backend/docker-compose.yml down
-GEMINI_IMAGE_MODEL=$GEMINI_IMAGE_MODEL \
+GEMINI_PRO_MODEL=$GEMINI_PRO_MODEL \
+GEMINI_FLASH_MODEL=$GEMINI_FLASH_MODEL \
 GEMINI_IMAGE_SIZE=$GEMINI_IMAGE_SIZE \
 GEMINI_THINKING_LEVEL=$GEMINI_THINKING_LEVEL \
   docker compose -f backend/docker-compose.yml up -d fastapi_app

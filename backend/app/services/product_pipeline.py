@@ -32,8 +32,8 @@ class ProductPipelineService:
     """Runs the create/edit pipeline for the single in-memory product session."""
 
     def __init__(self) -> None:
-        self._default_image_count = 3
-        self._thinking_level = settings.GEMINI_THINKING_LEVEL
+        self._default_image_count = 1
+        # Model selection delegated to GeminiImageService based on workflow
 
     async def run_create(self, prompt: str, image_count: Optional[int] = None) -> None:
         """Execute the create pipeline end-to-end."""
@@ -70,9 +70,9 @@ class ProductPipelineService:
             reference_images = state.images if mode == "edit" else None
             images = await gemini_image_service.generate_product_images(
                 prompt=instruction,
+                workflow=mode,  # "create" or "edit" - determines model selection
                 image_count=state.image_count or self._default_image_count,
                 reference_images=reference_images,
-                thinking_level=self._thinking_level,
             )
             if not images:
                 raise RuntimeError("Gemini image pipeline returned no images")

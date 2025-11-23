@@ -23,7 +23,7 @@ _background_tasks: Set[asyncio.Task] = set()
 
 class ProductCreateRequest(BaseModel):
     prompt: str = Field(..., min_length=5, max_length=2000)
-    image_count: int = Field(3, ge=1, le=6)
+    image_count: int = Field(1, ge=1, le=6)
 
 
 class ProductEditRequest(BaseModel):
