@@ -7,10 +7,15 @@ export interface PanelTexture {
   dimensions?: { width: number; height: number };
 }
 
-export interface PackagingState {
-  package_type: PackageType;
-  package_dimensions: PackageDimensions;
+export interface ShapeState {
+  dimensions: PackageDimensions;
   panel_textures: Record<string, PanelTexture>;
+}
+
+export interface PackagingState {
+  current_package_type: PackageType;
+  box_state: ShapeState;
+  cylinder_state: ShapeState;
   in_progress: boolean;
   generating_panel: string | null;
   generating_panels: string[];
@@ -18,6 +23,11 @@ export interface PackagingState {
   last_error: string | null;
   created_at: string;
   updated_at: string;
+  
+  // Backward compatibility properties (computed on backend)
+  package_type: PackageType;
+  package_dimensions: PackageDimensions;
+  panel_textures: Record<string, PanelTexture>;
 }
 
 export interface PackagingStatus {
