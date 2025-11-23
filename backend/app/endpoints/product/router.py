@@ -108,6 +108,43 @@ async def fetch_product_status():
     return status.model_dump(mode="json")
 
 
+@router.post("/recover")
+async def recover_state():
+    """
+    Recover from stale in_progress state (e.g. after page reload during generation).
+    Checks if there are any active background tasks. If not, clears the in_progress flag.
+    """
+    state = get_product_state()
+    
+    # Check if there are any active background tasks
+    has_active_tasks = any(not task.done() for task in _background_tasks)
+    
+    if state.in_progress and not has_active_tasks:
+        logger.warning("[product-router] Recovering from stale in_progress state")
+        state.in_progress = False
+        state.status = "idle"
+        state.message = "Recovered from interrupted generation"
+        save_product_state(state)
+        
+        status_payload = ProductStatus(
+            status="idle",
+            progress=0,
+            message="Recovered from interrupted generation"
+        )
+        save_product_status(status_payload)
+        
+        return {
+            "recovered": True,
+            "message": "Cleared stale in_progress state"
+        }
+    
+    return {
+        "recovered": False,
+        "in_progress": state.in_progress,
+        "has_active_tasks": has_active_tasks
+    }
+
+
 @router.post("/rewind/{iteration_index}")
 async def rewind_product(iteration_index: int):
     """Revert the product state to a specific iteration."""

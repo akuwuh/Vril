@@ -49,3 +49,10 @@ export async function rewindProduct(
   return handleResponse(response);
 }
 
+export async function recoverProductState(): Promise<{ recovered: boolean; message?: string }> {
+  const response = await fetch(`${API_BASE}/product/recover`, {
+    method: "POST",
+  });
+  return handleResponse(response);
+}
+

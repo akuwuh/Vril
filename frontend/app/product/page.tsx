@@ -13,7 +13,7 @@ import { ZoomIn, ZoomOut, Play, Pause, Settings, Sun, Warehouse, Eye, EyeOff } f
 import ModelViewer from "@/components/ModelViewer";
 import { AIChatPanel } from "@/components/AIChatPanel";
 import { useLoading } from "@/providers/LoadingProvider";
-import { getProductState } from "@/lib/product-api";
+import { getProductState, recoverProductState } from "@/lib/product-api";
 import { ProductState } from "@/lib/product-types";
 import { getCachedModelUrl } from "@/lib/model-cache";
 
@@ -45,14 +45,16 @@ function ProductPage() {
       const state = await getProductState();
       const latestIteration = state.iterations.at(-1);
       const iterationId = latestIteration?.id;
+      const remoteModelUrl = state.trellis_output?.model_file;
       
-      if (iterationId && latestIterationIdRef.current === iterationId) {
+      // Only skip model loading if we already have this exact iteration AND a model URL loaded
+      if (iterationId && latestIterationIdRef.current === iterationId && currentModelUrl) {
+        console.log("[ProductPage] ♻️ Same iteration, skipping model reload");
         setProductState(state);
         return;
       }
       
       setProductState(state);
-      const remoteModelUrl = state.trellis_output?.model_file;
       
       if (latestIteration && remoteModelUrl && iterationId) {
         try {
@@ -63,13 +65,33 @@ function ProductPage() {
           applyModelUrl(remoteModelUrl, iterationId);
         }
       }
+      
+      // Check if state shows in_progress - if so, resume polling
+      if (state.in_progress) {
+        console.log("[ProductPage] 🔄 Detected in-progress generation on mount, resuming...");
+        setIsEditInProgress(true);
+      }
     } catch (error) {
       console.error("Failed to load product state:", error);
     }
-  }, [applyModelUrl]);
+  }, [applyModelUrl, currentModelUrl]);
 
   useEffect(() => {
-    hydrateProductState().finally(() => stopLoading());
+    // On mount, first try to recover any stale states, then hydrate
+    const initialize = async () => {
+      try {
+        const recovery = await recoverProductState();
+        if (recovery.recovered) {
+          console.log("[ProductPage] ✅ Recovered from stale state:", recovery.message);
+        }
+      } catch (error) {
+        console.error("[ProductPage] Failed to recover state:", error);
+      }
+      
+      await hydrateProductState();
+    };
+    
+    initialize().finally(() => stopLoading());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
