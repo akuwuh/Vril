@@ -9,6 +9,7 @@ from app.models.packaging_state import (
     get_packaging_state,
     save_packaging_state,
 )
+from app.services.panel_prompt_templates import panel_prompt_builder
 
 logger = logging.getLogger(__name__)
 
@@ -26,26 +27,38 @@ class PanelGenerationService:
         package_type: str,
         panel_dimensions: dict,
         package_dimensions: dict,
+        reference_mockup: Optional[str] = None,
     ) -> Optional[str]:
-        """Generate a texture for a specific panel.
+        """Generate a texture for a specific panel using structured prompts with guardrails.
         
         Args:
             panel_id: Panel identifier (e.g., "front", "back", "body")
             prompt: User's design prompt
             package_type: "box" or "cylinder"
             panel_dimensions: Panel-specific dimensions (width, height in mm)
-            package_dimensions: Full package dimensions
+            package_dimensions: Full package dimensions (width, height, depth in mm)
+            reference_mockup: Optional base64 reference mockup image for style matching
             
         Returns:
             Base64-encoded image data URL or None if generation fails
         """
         try:
-            # Build enhanced prompt for panel-specific generation
-            enhanced_prompt = self._build_panel_prompt(
-                panel_id, prompt, package_type, panel_dimensions, package_dimensions
+            # Validate and build structured prompt with guardrails
+            enhanced_prompt = self._build_structured_prompt(
+                panel_id=panel_id,
+                user_prompt=prompt,
+                package_type=package_type,
+                panel_dimensions=panel_dimensions,
+                package_dimensions=package_dimensions,
+                has_reference=bool(reference_mockup),
             )
             
-            logger.info(f"[panel-gen] Generating texture for panel {panel_id} with prompt: {prompt[:100]}...")
+            logger.info(f"[panel-gen] Generating texture for panel {panel_id}")
+            logger.info(f"[panel-gen] User prompt: {prompt[:100]}...")
+            logger.info(f"[panel-gen] Using structured prompt template: {'WITH' if reference_mockup else 'WITHOUT'} reference mockup")
+            
+            # Prepare reference images if mockup is provided
+            reference_images = [reference_mockup] if reference_mockup else None
             
             # Use Gemini to generate the texture
             # For panel textures, we want flat designs suitable for wrapping
@@ -54,7 +67,7 @@ class PanelGenerationService:
                 prompt=enhanced_prompt,
                 workflow="create",  # Always create new designs
                 image_count=1,
-                reference_images=None,
+                reference_images=reference_images,
                 is_texture=True,  # This is a texture, not a product photo
             )
             
@@ -65,6 +78,10 @@ class PanelGenerationService:
                 logger.warning(f"[panel-gen] No image returned for panel {panel_id}")
                 return None
                 
+        except ValueError as e:
+            # Prompt validation errors
+            logger.error(f"[panel-gen] Prompt validation error for panel {panel_id}: {e}")
+            raise
         except GeminiError as e:
             logger.error(f"[panel-gen] Gemini error generating panel {panel_id}: {e}")
             raise
@@ -72,83 +89,58 @@ class PanelGenerationService:
             logger.error(f"[panel-gen] Unexpected error generating panel {panel_id}: {e}", exc_info=True)
             raise
     
-    def _build_panel_prompt(
+    def _build_structured_prompt(
         self,
         panel_id: str,
         user_prompt: str,
         package_type: str,
         panel_dimensions: dict,
         package_dimensions: dict,
+        has_reference: bool,
     ) -> str:
-        """Build an enhanced prompt for panel texture generation."""
+        """
+        Build a structured prompt using the master panel prompt template system.
         
-        # Panel-specific context
-        panel_context = self._get_panel_context(panel_id, package_type)
+        This enforces guardrails, validates input, and creates consistent prompts.
+        """
+        # Extract dimensions
+        panel_width = panel_dimensions.get("width", 0)
+        panel_height = panel_dimensions.get("height", 0)
+        box_width = package_dimensions.get("width", 0)
+        box_height = package_dimensions.get("height", 0)
+        box_depth = package_dimensions.get("depth", 0)
         
-        # Dimensions info
-        width = panel_dimensions.get("width", 0)
-        height = panel_dimensions.get("height", 0)
-        dimensions_text = f"{width}mm × {height}mm"
+        # Validate dimensions
+        if panel_width <= 0 or panel_height <= 0:
+            raise ValueError(f"Invalid panel dimensions: {panel_width}mm × {panel_height}mm")
         
-        # Check if user wants a simple solid color and extract the exact color
-        import re
-        user_lower = user_prompt.lower()
-        
-        # Extract color from common patterns
-        color_match = re.search(r'\b(black|white|red|blue|green|yellow|orange|purple|pink|gray|grey|brown)\b', user_lower)
-        extracted_color = color_match.group(1) if color_match else None
-        
-        is_simple_color = any(keyword in user_lower for keyword in [
-            "black", "white", "red", "blue", "green", "yellow", "orange", "purple", "pink",
-            "gray", "grey", "brown", "paint it", "make it", "color it", "turn it", "solid", "plain"
-        ])
-        
-        if is_simple_color and extracted_color:
-            # For simple color requests, use a very explicit prompt with exact color
-            enhanced = (
-                f"Generate a flat, solid {extracted_color} color texture for a packaging panel. "
-                f"This is the {panel_context} panel with dimensions {dimensions_text}. "
-                f"\n\n"
-                f"CRITICAL REQUIREMENTS:\n"
-                f"- The entire surface must be exactly {extracted_color} color, nothing else\n"
-                f"- No borders, no edges, no frames, no outlines\n"
-                f"- No gradients, no patterns, no designs, no shadows\n"
-                f"- The color must extend edge-to-edge, covering 100% of the {dimensions_text} area\n"
-                f"- Every single pixel must be the exact same {extracted_color} color\n"
-                f"- This is a flat 2D texture, not a 3D object or photograph\n"
-                f"- No lighting effects, no depth, no perspective\n"
-                f"- The texture must be completely uniform and seamless\n"
-                f"- Think of it like a solid color swatch or paint sample - pure {extracted_color} from edge to edge"
-            )
-        elif is_simple_color:
-            # Color detected but couldn't extract - use generic prompt
-            enhanced = (
-                f"Generate a flat, solid color texture for a packaging panel. "
-                f"This is the {panel_context} panel with dimensions {dimensions_text}. "
-                f"The user wants: {user_prompt}\n\n"
-                f"CRITICAL REQUIREMENTS:\n"
-                f"- The entire surface must be a single, uniform color covering 100% of the area\n"
-                f"- No borders, no edges, no frames, no outlines\n"
-                f"- No gradients, no patterns, no designs, no shadows\n"
-                f"- The color must extend edge-to-edge, covering the full {dimensions_text} area\n"
-                f"- This is a flat 2D texture, not a 3D object or photograph\n"
-                f"- No lighting effects, no depth, no perspective\n"
-                f"- The texture must be completely uniform and seamless"
-            )
-        else:
-            # For complex design requests, use the detailed prompt
-            enhanced = (
-                f"Create a professional packaging design texture for a {package_type} package panel. "
-                f"This is the {panel_context} panel with dimensions {dimensions_text}. "
-                f"{user_prompt}\n\n"
-                f"The design should be suitable for printing on packaging material. "
-                f"Create a flat, seamless design that covers 100% of the {dimensions_text} surface area. "
-                f"Ensure the design is high-quality, print-ready, and visually appealing. "
-                f"The design must fill the entire panel area without any gaps, borders, or empty spaces. "
-                f"Avoid any 3D effects or perspective - this is a flat texture that will be applied to a surface."
+        if box_width <= 0 or box_height <= 0 or box_depth <= 0:
+            logger.warning(f"[panel-gen] Invalid box dimensions, using panel dimensions as fallback")
+            # Fallback to simple prompt if box dimensions are invalid
+            return panel_prompt_builder.build_simple_prompt(
+                face_name=panel_id,
+                panel_width_mm=panel_width,
+                panel_height_mm=panel_height,
+                user_prompt=user_prompt,
             )
         
-        return enhanced
+        # Build the master prompt with all context
+        try:
+            prompt = panel_prompt_builder.build_master_prompt(
+                face_name=panel_id,
+                panel_width_mm=panel_width,
+                panel_height_mm=panel_height,
+                box_width_mm=box_width,
+                box_height_mm=box_height,
+                box_depth_mm=box_depth,
+                user_prompt=user_prompt,
+                has_reference_mockup=has_reference,
+            )
+            return prompt
+        except ValueError as e:
+            # Prompt validation failed - re-raise with context
+            logger.error(f"[panel-gen] Prompt validation failed: {e}")
+            raise ValueError(f"Your prompt needs improvement: {e}")
     
     def _get_panel_context(self, panel_id: str, package_type: str) -> str:
         """Get descriptive context for a panel."""

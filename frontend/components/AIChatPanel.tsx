@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, RotateCcw } from "lucide-react";
@@ -301,13 +301,98 @@ function PackagingAIChatPanel({
   const [prompt, setPrompt] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [history, setHistory] = useState<Array<{ prompt: string; response: string }>>([]);
+  const [referenceMockup, setReferenceMockup] = useState<string | null>(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
   const { generateTexture, error } = usePanelTexture();
+
+  // Validate prompt in real-time - memoized for performance
+  const validatePrompt = useCallback((text: string) => {
+    const trimmed = text.trim();
+    
+    if (trimmed.length === 0) {
+      setValidationError(null);
+      return null;
+    }
+    
+    if (trimmed.length < 3) {
+      const error = "Prompt is too short. Please be more specific.";
+      setValidationError(error);
+      return error;
+    }
+    
+    // Check for overly vague prompts - expanded list
+    const vague = ["logo", "design", "texture", "pattern", "cool", "nice", "good", "emblem", "symbol", "brand"];
+    const words = trimmed.toLowerCase().split(/\s+/);
+    
+    // Check if prompt is just a vague word or "X logo" pattern
+    if (vague.includes(trimmed.toLowerCase()) || 
+        (words.length === 2 && vague.includes(words[1]))) {
+      const error = `"${trimmed}" is too vague. Please describe what style, colors, or patterns you want. Example: "blue geometric pattern with white lines"`;
+      setValidationError(error);
+      return error;
+    }
+    
+    setValidationError(null);
+    return null;
+  }, []);
+
+  // Auto-validate when prompt changes (backup to onChange)
+  useEffect(() => {
+    if (prompt) {
+      validatePrompt(prompt);
+    }
+  }, [prompt, validatePrompt]);
+
+  // Handle reference mockup upload
+  const handleMockupUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Check file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      setHistory([
+        ...history,
+        {
+          prompt: "Reference upload",
+          response: "Image too large. Please use an image under 5MB.",
+        },
+      ]);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target?.result as string;
+      setReferenceMockup(base64);
+      setHistory([
+        ...history,
+        {
+          prompt: "Reference mockup uploaded",
+          response: "Reference image uploaded successfully. Your next generation will use this as a style guide.",
+        },
+      ]);
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleSubmit = async () => {
     console.log("[AIChatPanel] handleSubmit called", { prompt, selectedPanelId, hasPackageModel: !!packageModel });
     
     if (!prompt.trim()) {
       console.log("[AIChatPanel] Prompt is empty, returning");
+      return;
+    }
+    
+    // Check validation
+    if (validationError) {
+      setHistory([
+        ...history,
+        {
+          prompt: prompt.trim(),
+          response: validationError,
+        },
+      ]);
       return;
     }
 
@@ -409,13 +494,14 @@ function PackagingAIChatPanel({
         return;
       }
 
-      // Generate texture using the prompt
+      // Generate texture using the prompt with optional reference mockup
       const texture = await generateTexture({
         panel_id: selectedPanelId,
         prompt: prompt.trim(),
         package_type: packageModel.type,
         panel_dimensions: panelDimensions,
         package_dimensions: packageModel.dimensions,
+        reference_mockup: referenceMockup || undefined,
       });
 
       console.log("[AIChatPanel] Texture generation result:", texture ? "success" : "failed", { error });
@@ -458,7 +544,7 @@ function PackagingAIChatPanel({
   };
 
   return (
-    <div className="space-y-4 flex-1 flex flex-col">
+    <div className="space-y-3 flex-1 flex flex-col">
       {/* Prompt Input */}
       <div className="space-y-2">
         {!selectedPanelId && (
@@ -466,31 +552,101 @@ function PackagingAIChatPanel({
             Select a panel first to apply changes
           </p>
         )}
+        
+        {/* Helpful examples */}
+        {selectedPanelId && !prompt && (
+          <div className="text-xs bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded p-2 space-y-1">
+            <p className="font-medium text-blue-900 dark:text-blue-100">💡 Example prompts:</p>
+            <p className="text-blue-700 dark:text-blue-300">• "Vintage cardboard texture with subtle grain"</p>
+            <p className="text-blue-700 dark:text-blue-300">• "Black and white geometric checkerboard pattern"</p>
+            <p className="text-blue-700 dark:text-blue-300">• "Navy blue with thin white diagonal stripes"</p>
+          </div>
+        )}
+        
         <Textarea
-          placeholder={selectedPanelId ? "Describe changes (e.g., 'turn it black', 'add stripes')..." : "Select a panel first..."}
+          placeholder={selectedPanelId ? "Be specific: describe style, colors, patterns..." : "Select a panel first..."}
           value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          className="min-h-[80px] resize-none text-sm"
+          onChange={(e) => {
+            const newValue = e.target.value;
+            setPrompt(newValue);
+            // Validate immediately on change
+            validatePrompt(newValue);
+          }}
+          onBlur={(e) => {
+            // Re-validate on blur to catch any edge cases
+            validatePrompt(e.target.value);
+          }}
+          className={`min-h-[80px] resize-none text-sm transition-all ${
+            validationError ? "border-red-500 border-2 focus:border-red-600" : ""
+          }`}
           disabled={isProcessing || !selectedPanelId}
         />
-        <Button 
+        
+        {/* Validation error */}
+        {validationError && (
+          <p className="text-xs text-red-600 dark:text-red-400">
+            ⚠️ {validationError}
+          </p>
+        )}
+        
+        {/* Advanced Options */}
+        <div className="border rounded p-2 space-y-2">
+          <button
+            onClick={() => setShowAdvanced(!showAdvanced)}
+            className="text-xs font-medium text-muted-foreground hover:text-foreground flex items-center justify-between w-full"
+          >
+            <span>⚙️ Advanced Options</span>
+            <span>{showAdvanced ? "▼" : "▶"}</span>
+          </button>
+          
+          {showAdvanced && (
+            <div className="space-y-2 pt-2 border-t">
+              <div className="space-y-1">
+                <label className="text-xs font-medium block">Reference Mockup (Optional)</label>
+                <p className="text-xs text-muted-foreground mb-1">
+                  Upload a reference image to match its style
+                </p>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleMockupUpload}
+                  className="text-xs w-full"
+                  disabled={isProcessing}
+                />
+                {referenceMockup && (
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="text-xs text-green-600">✓ Reference loaded</span>
+                    <button
+                      onClick={() => setReferenceMockup(null)}
+                      className="text-xs text-red-600 hover:underline"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+        
+        <Button
           onClick={(e) => {
             e.preventDefault();
-            console.log("[AIChatPanel] Button clicked");
+            console.log("[AIChatPanel] Button clicked", { prompt: prompt.trim(), isProcessing, selectedPanelId });
             handleSubmit();
-          }} 
-          disabled={!prompt.trim() || isProcessing || !selectedPanelId} 
-          variant="outline" 
-          className="w-full" 
+          }}
+          disabled={!prompt.trim() || isProcessing || !selectedPanelId || !!validationError}
+          variant="outline"
+          className="w-full"
           size="sm"
         >
           {isProcessing ? (
             <>
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Processing...
+              Generating...
             </>
           ) : (
-            "Apply Changes"
+            "Generate Panel Design"
           )}
         </Button>
       </div>

@@ -25,6 +25,7 @@ class PanelGenerateRequest(BaseModel):
     package_type: str = Field(..., description="Package type: 'box' or 'cylinder'")
     panel_dimensions: dict = Field(..., description="Panel dimensions: {width, height} in mm")
     package_dimensions: dict = Field(..., description="Full package dimensions: {width, height, depth} in mm")
+    reference_mockup: Optional[str] = Field(None, description="Optional base64-encoded reference mockup image for style matching")
 
 
 def _track_background_task(task: asyncio.Task) -> None:
@@ -60,6 +61,7 @@ async def generate_panel_texture(request: PanelGenerateRequest):
                 package_type=request.package_type,
                 panel_dimensions=request.panel_dimensions,
                 package_dimensions=request.package_dimensions,
+                reference_mockup=request.reference_mockup,
             )
             
             # Get fresh state to avoid race conditions

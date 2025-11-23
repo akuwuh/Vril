@@ -7,6 +7,7 @@ interface GenerateTextureRequest {
   package_type: string
   panel_dimensions: { width: number; height: number }
   package_dimensions: { width: number; height: number; depth: number }
+  reference_mockup?: string
 }
 
 interface PanelTexture {
@@ -25,6 +26,10 @@ export function usePanelTexture() {
     console.log("[usePanelTexture] generateTexture called with:", request)
     setGenerating(request.panel_id)
     setError(null)
+
+    // Record the timestamp BEFORE making the request
+    const requestStartTime = new Date().toISOString()
+    console.log("[usePanelTexture] Request started at:", requestStartTime)
 
     try {
       console.log("[usePanelTexture] Making POST request to:", API_ENDPOINTS.packaging.generate)
@@ -59,9 +64,9 @@ export function usePanelTexture() {
       const responseData = await response.json()
       console.log("[usePanelTexture] Initial response:", responseData)
 
-      // Poll for completion
+      // Poll for completion - pass the request start time to filter out old textures
       console.log("[usePanelTexture] Starting to poll for texture...")
-      const texture = await pollForTexture(request.panel_id)
+      const texture = await pollForTexture(request.panel_id, 60, requestStartTime)
       console.log("[usePanelTexture] Polling complete, texture:", texture ? "received" : "null")
       return texture
     } catch (err) {
@@ -74,8 +79,14 @@ export function usePanelTexture() {
     }
   }
 
-  const pollForTexture = async (panelId: string, maxAttempts = 60): Promise<PanelTexture | null> => {
+  const pollForTexture = async (
+    panelId: string, 
+    maxAttempts = 60, 
+    requestStartTime?: string
+  ): Promise<PanelTexture | null> => {
     console.log("[usePanelTexture] pollForTexture started for panel:", panelId)
+    console.log("[usePanelTexture] Only accepting textures generated after:", requestStartTime)
+    
     for (let i = 0; i < maxAttempts; i++) {
       if (i > 0) {
         await new Promise((resolve) => setTimeout(resolve, 2000)) // Wait 2 seconds (skip first iteration)
@@ -99,6 +110,17 @@ export function usePanelTexture() {
             const textureResponse = await fetch(API_ENDPOINTS.packaging.getTexture(panelId))
             if (textureResponse.ok) {
               const data = await textureResponse.json()
+              
+              // IMPORTANT: Check if this texture was generated AFTER our request started
+              if (requestStartTime && data.generated_at) {
+                if (data.generated_at < requestStartTime) {
+                  console.warn(`[usePanelTexture] ⚠️ Found OLD texture for ${panelId}, ignoring`)
+                  console.warn(`  Texture time: ${data.generated_at}`)
+                  console.warn(`  Request time: ${requestStartTime}`)
+                  throw new Error("Texture generation did not complete - got old texture")
+                }
+              }
+              
               return data as PanelTexture
             }
             // No texture and not generating - stop polling
@@ -116,7 +138,18 @@ export function usePanelTexture() {
         
         if (response.ok) {
           const data = await response.json()
-          console.log("[usePanelTexture] Texture found!", data)
+          
+          // CRITICAL: Check if this texture was generated AFTER our request started
+          if (requestStartTime && data.generated_at) {
+            if (data.generated_at < requestStartTime) {
+              console.warn(`[usePanelTexture] ⚠️ Poll found OLD texture, continuing to wait...`)
+              console.warn(`  Texture generated at: ${data.generated_at}`)
+              console.warn(`  Request started at: ${requestStartTime}`)
+              continue // Keep polling for the NEW texture
+            }
+          }
+          
+          console.log("[usePanelTexture] ✅ Found NEW texture!", data)
           return data as PanelTexture
         } else if (response.status === 202) {
           // Generation in progress (202 Accepted) - continue polling
