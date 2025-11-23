@@ -119,17 +119,28 @@ function ModelLoaderWrapper({
 }) {
   const [opacity, setOpacity] = useState(0);
   const fadeFrameRef = useRef<number | null>(null);
+  const lastUrlRef = useRef<string | null>(null);
+  const hasLoadedRef = useRef(false);
 
   useEffect(() => {
-    console.log(`[ModelViewer] New URL detected: ${url.substring(0, 60)}...`);
-    setOpacity(0);
-    if (fadeFrameRef.current) {
-      cancelAnimationFrame(fadeFrameRef.current);
-      fadeFrameRef.current = null;
+    if (lastUrlRef.current !== url) {
+      console.log(`[ModelViewer] New URL detected: ${url.substring(0, 60)}...`);
+      lastUrlRef.current = url;
+      hasLoadedRef.current = false;
+      setOpacity(0);
+      if (fadeFrameRef.current) {
+        cancelAnimationFrame(fadeFrameRef.current);
+        fadeFrameRef.current = null;
+      }
     }
   }, [url]);
 
   const handleLoaded = useCallback(() => {
+    if (hasLoadedRef.current) {
+      console.log(`[ModelViewer] Skipping duplicate onLoad for same URL`);
+      return;
+    }
+    hasLoadedRef.current = true;
     console.log(`[ModelViewer] GLB loaded successfully, starting fade-in animation`);
     const duration = 350;
     const start = performance.now();
@@ -137,7 +148,6 @@ function ModelLoaderWrapper({
     const animate = (now: number) => {
       const progress = Math.min((now - start) / duration, 1);
       setOpacity(progress);
-      console.log(`[ModelViewer] Fade progress: ${(progress * 100).toFixed(1)}% (opacity: ${progress.toFixed(2)})`);
       if (progress < 1) {
         fadeFrameRef.current = requestAnimationFrame(animate);
       } else {
