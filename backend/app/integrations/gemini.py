@@ -184,6 +184,7 @@ class GeminiImageService:
                 contents.insert(1, part)  # Reference image after enhanced prompt
         config_kwargs: Dict[str, Any] = {}
         if thinking_level:
+            # Per Gemini 3.0 Pro Image Preview docs, thinking_level is "low" or "high"
             config_kwargs["thinking_config"] = types.ThinkingConfig(
                 thinking_level=thinking_level
             )
