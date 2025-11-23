@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useMemo, useEffect } from "react"
+import React, { useRef, useMemo, useEffect } from "react"
 import { Canvas, useFrame } from "@react-three/fiber"
 import type { ThreeEvent } from "@react-three/fiber"
 import { OrbitControls, PerspectiveCamera, Environment } from "@react-three/drei"
@@ -21,7 +21,7 @@ interface PackageViewer3DProps {
   autoRotate?: boolean
 }
 
-function BoxPackage3D({
+const BoxPackage3D = React.memo(function BoxPackage3D({
   dimensions,
   selectedPanelId,
   onPanelSelect,
@@ -52,7 +52,7 @@ function BoxPackage3D({
     }
   })
 
-  // Create materials array that updates when textures change
+  // Create materials array with lazy texture loading
   const materials = useMemo(() => {
     const faceToPanelMap: Record<number, PanelId> = {
       0: "right",
@@ -63,13 +63,11 @@ function BoxPackage3D({
       5: "back",
     }
 
-    const textureLoader = new THREE.TextureLoader()
-
     return Array.from({ length: 6 }, (_, i) => {
       const panelId = faceToPanelMap[i]
       const textureUrl = panelTextures[panelId]
 
-      // If texture exists, start with white color, otherwise use the base color
+      // Create base material
       const material = new THREE.MeshStandardMaterial({
         color: textureUrl ? 0xffffff : color,
         roughness: 0.3,
@@ -83,30 +81,65 @@ function BoxPackage3D({
         material.emissiveIntensity = 0.3
       }
 
-      // Load texture IMMEDIATELY if available
-      if (textureUrl) {
+      return material
+    })
+  }, [color, wireframe]) // Remove panelTextures and selectedPanelId from deps
+
+  // Load textures asynchronously after materials are created
+  useEffect(() => {
+    const faceToPanelMap: Record<number, PanelId> = {
+      0: "right",
+      1: "left",
+      2: "top",
+      3: "bottom",
+      4: "front",
+      5: "back",
+    }
+
+    const textureLoader = new THREE.TextureLoader()
+
+    materials.forEach((material, i) => {
+      const panelId = faceToPanelMap[i]
+      const textureUrl = panelTextures[panelId]
+
+      // Clear existing texture if no longer available
+      if (!textureUrl && material.map) {
+        material.map.dispose()
+        material.map = null
+        material.color.setHex(color)
+        material.userData.textureUrl = null
+        material.needsUpdate = true
+        return
+      }
+
+      // Load texture asynchronously if available and different
+      if (textureUrl && (!material.map || material.userData.textureUrl !== textureUrl)) {
         console.log(`[BoxPackage3D] 🎨 Loading texture for ${panelId}`)
         textureLoader.load(
           textureUrl,
           (texture) => {
             // Enable texture flipping for correct orientation
             texture.flipY = true
-            
+
             // Use ClampToEdge to prevent border artifacts
             texture.wrapS = THREE.ClampToEdgeWrapping
             texture.wrapT = THREE.ClampToEdgeWrapping
-            
+
             // Use nearest or linear filtering to prevent edge bleeding
             texture.minFilter = THREE.LinearFilter
             texture.magFilter = THREE.LinearFilter
-            
+
             // Ensure texture covers full UV space (0-1)
             texture.repeat.set(1, 1)
             texture.offset.set(0, 0)
             
+            // Cleanup old texture
+            if (material.map) material.map.dispose()
+
             // Apply to material
             material.map = texture
             material.color.setHex(0xffffff) // Set to white so texture shows true colors
+            material.userData.textureUrl = textureUrl // Track current URL
             material.needsUpdate = true
             console.log(`[BoxPackage3D] ✅ Texture applied to ${panelId}`)
           },
@@ -116,10 +149,23 @@ function BoxPackage3D({
           }
         )
       }
-
-      return material
     })
-  }, [panelTextures, selectedPanelId, color, wireframe])
+
+    // Update selection highlights
+    materials.forEach((material, i) => {
+      const panelId = faceToPanelMap[i]
+      const isSelected = panelId === selectedPanelId
+
+      if (isSelected && material.emissive.getHex() !== 0xfbbf24) {
+        material.emissive.set("#fbbf24")
+        material.emissiveIntensity = 0.3
+      } else if (!isSelected && material.emissive.getHex() !== 0x000000) {
+        material.emissive.set("#000000")
+        material.emissiveIntensity = 0
+      }
+      material.needsUpdate = true
+    })
+  }, [panelTextures, selectedPanelId, materials, color])
 
   const handleClick = (event: ThreeEvent<MouseEvent>) => {
     if (!onPanelSelect) return
@@ -170,9 +216,9 @@ function BoxPackage3D({
       <primitive object={materials} attach="material" />
     </mesh>
   )
-}
+})
 
-function CylinderPackage3D({
+const CylinderPackage3D = React.memo(function CylinderPackage3D({
   dimensions,
   selectedPanelId,
   onPanelSelect,
@@ -203,42 +249,13 @@ function CylinderPackage3D({
   })
 
   const baseMaterial = useMemo(() => {
-    const bodyTexture = panelTextures["body"]
-    
-    const material = new THREE.MeshStandardMaterial({
-      color: bodyTexture ? 0xffffff : color,
+    return new THREE.MeshStandardMaterial({
+      color: 0xffffff,
       roughness: 0.3,
       metalness: 0.1,
       wireframe,
     })
-    
-    // Apply body texture if available - load asynchronously
-    if (bodyTexture) {
-      const textureLoader = new THREE.TextureLoader()
-      textureLoader.load(
-        bodyTexture,
-        (texture) => {
-          texture.flipY = true
-          // Use RepeatWrapping for horizontal (S) to seamlessly wrap around cylinder
-          texture.wrapS = THREE.RepeatWrapping
-          texture.wrapT = THREE.ClampToEdgeWrapping
-          texture.minFilter = THREE.LinearFilter
-          texture.magFilter = THREE.LinearFilter
-          texture.repeat.set(1, 1)
-          texture.offset.set(0, 0)
-          material.map = texture
-          material.color.setHex(0xffffff)
-          material.needsUpdate = true
-        },
-        undefined,
-        (error) => {
-          console.error("[CylinderPackage3D] Failed to load body texture:", error)
-        }
-      )
-    }
-    
-    return material
-  }, [color, panelTextures, wireframe])
+  }, [wireframe])
 
   const selectedMaterial = useMemo(
     () =>
@@ -252,19 +269,69 @@ function CylinderPackage3D({
       }),
     [wireframe]
   )
-  
+
   const topMaterial = useMemo(() => {
-    const topTexture = panelTextures["top"]
-    
-    const material = new THREE.MeshStandardMaterial({
-      color: topTexture ? 0xffffff : color,
+    return new THREE.MeshStandardMaterial({
+      color: 0xffffff,
       roughness: 0.3,
       metalness: 0.1,
       wireframe,
     })
-    
-    if (topTexture) {
-      const textureLoader = new THREE.TextureLoader()
+  }, [wireframe])
+
+  const bottomMaterial = useMemo(() => {
+    return new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.3,
+      metalness: 0.1,
+      wireframe,
+    })
+  }, [wireframe])
+
+  // Load textures asynchronously for cylinder
+  useEffect(() => {
+    const textureLoader = new THREE.TextureLoader()
+
+    // Load body texture
+    const bodyTexture = panelTextures["body"]
+    if (bodyTexture && (!baseMaterial.map || baseMaterial.userData.textureUrl !== bodyTexture)) {
+      console.log("[CylinderPackage3D] 🎨 Loading body texture:", bodyTexture)
+      textureLoader.load(
+        bodyTexture,
+        (texture) => {
+          texture.flipY = true
+          texture.wrapS = THREE.RepeatWrapping
+          texture.wrapT = THREE.ClampToEdgeWrapping
+          texture.minFilter = THREE.LinearFilter
+          texture.magFilter = THREE.LinearFilter
+          texture.repeat.set(1, 1)
+          texture.offset.set(0, 0)
+          
+          // Cleanup old texture
+          if (baseMaterial.map) baseMaterial.map.dispose()
+          
+          baseMaterial.map = texture
+          baseMaterial.color.setHex(0xffffff)
+          baseMaterial.userData.textureUrl = bodyTexture // Track current URL
+          baseMaterial.needsUpdate = true
+          console.log("[CylinderPackage3D] ✅ Body texture applied")
+        },
+        undefined,
+        (error) => {
+          console.error("[CylinderPackage3D] ❌ Failed to load body texture:", error)
+        }
+      )
+    } else if (!bodyTexture && baseMaterial.map) {
+      baseMaterial.map.dispose()
+      baseMaterial.map = null
+      baseMaterial.color.setHex(color)
+      baseMaterial.userData.textureUrl = null
+      baseMaterial.needsUpdate = true
+    }
+
+    // Load top texture
+    const topTexture = panelTextures["top"]
+    if (topTexture && (!topMaterial.map || topMaterial.userData.textureUrl !== topTexture)) {
       textureLoader.load(
         topTexture,
         (texture) => {
@@ -275,32 +342,30 @@ function CylinderPackage3D({
           texture.magFilter = THREE.LinearFilter
           texture.repeat.set(1, 1)
           texture.offset.set(0, 0)
-          material.map = texture
-          material.color.setHex(0xffffff)
-          material.needsUpdate = true
+          
+          if (topMaterial.map) topMaterial.map.dispose()
+          
+          topMaterial.map = texture
+          topMaterial.color.setHex(0xffffff)
+          topMaterial.userData.textureUrl = topTexture
+          topMaterial.needsUpdate = true
         },
         undefined,
         (error) => {
           console.error("[CylinderPackage3D] Failed to load top texture:", error)
         }
       )
+    } else if (!topTexture && topMaterial.map) {
+      topMaterial.map.dispose()
+      topMaterial.map = null
+      topMaterial.color.setHex(color)
+      topMaterial.userData.textureUrl = null
+      topMaterial.needsUpdate = true
     }
-    
-    return material
-  }, [color, panelTextures, wireframe])
-  
-  const bottomMaterial = useMemo(() => {
+
+    // Load bottom texture
     const bottomTexture = panelTextures["bottom"]
-    
-    const material = new THREE.MeshStandardMaterial({
-      color: bottomTexture ? 0xffffff : color,
-      roughness: 0.3,
-      metalness: 0.1,
-      wireframe,
-    })
-    
-    if (bottomTexture) {
-      const textureLoader = new THREE.TextureLoader()
+    if (bottomTexture && (!bottomMaterial.map || bottomMaterial.userData.textureUrl !== bottomTexture)) {
       textureLoader.load(
         bottomTexture,
         (texture) => {
@@ -311,19 +376,27 @@ function CylinderPackage3D({
           texture.magFilter = THREE.LinearFilter
           texture.repeat.set(1, 1)
           texture.offset.set(0, 0)
-          material.map = texture
-          material.color.setHex(0xffffff)
-          material.needsUpdate = true
+          
+          if (bottomMaterial.map) bottomMaterial.map.dispose()
+          
+          bottomMaterial.map = texture
+          bottomMaterial.color.setHex(0xffffff)
+          bottomMaterial.userData.textureUrl = bottomTexture
+          bottomMaterial.needsUpdate = true
         },
         undefined,
         (error) => {
           console.error("[CylinderPackage3D] Failed to load bottom texture:", error)
         }
       )
+    } else if (!bottomTexture && bottomMaterial.map) {
+      bottomMaterial.map.dispose()
+      bottomMaterial.map = null
+      bottomMaterial.color.setHex(color)
+      bottomMaterial.userData.textureUrl = null
+      bottomMaterial.needsUpdate = true
     }
-    
-    return material
-  }, [color, panelTextures, wireframe])
+  }, [panelTextures, baseMaterial, topMaterial, bottomMaterial, color])
 
   const handleBodyClick = (event: ThreeEvent<MouseEvent>) => {
     if (!onPanelSelect) return
@@ -357,7 +430,7 @@ function CylinderPackage3D({
 
   return (
     <group ref={groupRef}>
-      {/* Main cylinder body */}
+      {/* Main cylinder body - openEnded to avoid z-fighting with caps */}
       <mesh
         castShadow
         receiveShadow
@@ -371,7 +444,7 @@ function CylinderPackage3D({
         }}
         material={selectedPanelId === "body" ? selectedMaterial : baseMaterial}
       >
-        <cylinderGeometry args={[radius, radius, cylinderHeight, 32]} />
+        <cylinderGeometry args={[radius, radius, cylinderHeight, 32, 1, true]} />
       </mesh>
       {/* Top cap */}
       <mesh
@@ -409,9 +482,9 @@ function CylinderPackage3D({
       </mesh>
     </group>
   )
-}
+})
 
-function Package3D({ 
+const Package3D = React.memo(function Package3D({ 
   model, 
   selectedPanelId, 
   onPanelSelect, 
@@ -452,16 +525,29 @@ function Package3D({
     default:
       return null
   }
-}
+})
 
 export function PackageViewer3D(props: PackageViewer3DProps) {
   const controlsRef = useRef<OrbitControlsImpl>(null)
+  const materialsRef = useRef<THREE.MeshStandardMaterial[]>([])
   const {
     lightingMode = "studio",
     wireframe = false,
     zoomAction,
     autoRotate = true,
   } = props
+
+  // Cleanup textures on unmount
+  useEffect(() => {
+    return () => {
+      materialsRef.current.forEach(material => {
+        if (material.map) {
+          material.map.dispose()
+        }
+        material.dispose()
+      })
+    }
+  }, [])
 
   useEffect(() => {
     if (!zoomAction || !controlsRef.current) return
@@ -487,7 +573,7 @@ export function PackageViewer3D(props: PackageViewer3DProps) {
 
   return (
     <div className="w-full h-full bg-linear-to-br from-slate-50 to-slate-100 rounded-lg border border-border overflow-hidden relative">
-      <Canvas 
+      <Canvas
         key="packaging-viewer-canvas"
         shadows
         gl={{
@@ -495,7 +581,7 @@ export function PackageViewer3D(props: PackageViewer3DProps) {
           powerPreference: "high-performance",
           antialias: true,
         }}
-        frameloop="always"
+        frameloop="demand" // Only render when needed, not constantly
       >
         <PerspectiveCamera makeDefault position={[4, 3, 4]} />
         <OrbitControls 

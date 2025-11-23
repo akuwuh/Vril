@@ -91,7 +91,9 @@ export function usePanelTexture() {
     
     for (let i = 0; i < maxAttempts; i++) {
       if (i > 0) {
-        await new Promise((resolve) => setTimeout(resolve, 2000)) // Wait 2 seconds (skip first iteration)
+        // Exponential backoff: start at 2s, increase to max 8s
+        const delay = Math.min(2000 * Math.pow(1.3, Math.min(i - 1, 5)), 8000)
+        await new Promise((resolve) => setTimeout(resolve, delay))
       }
 
       try {
