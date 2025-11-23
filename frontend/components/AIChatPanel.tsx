@@ -28,6 +28,7 @@ interface PackagingAIChatPanelProps {
   selectedPanelId?: PanelId | null;
   packageModel?: PackageModel;
   onTextureGenerated?: (panelId: PanelId, textureUrl: string) => void;
+  onGenerationStart?: () => void; // Notify parent when generation starts
   packagingState?: any; // PackagingState from backend
   isGenerating?: boolean; // Parent tracks if generation is in progress
   productState?: never;
@@ -357,6 +358,7 @@ function PackagingAIChatPanel({
   selectedPanelId, 
   packageModel,
   onTextureGenerated,
+  onGenerationStart,
   packagingState,
   isGenerating
 }: PackagingAIChatPanelProps) {

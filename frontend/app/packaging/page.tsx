@@ -513,6 +513,10 @@ function Packaging() {
         depth: result.dimensions.depth || 100,
       };
       
+      // Clear texture cache when resetting
+      const { clearTextureCache } = await import('@/lib/texture-cache');
+      await clearTextureCache();
+      
       // Clear textures and reset dimensions
       setPanelTextures({});
       setDimensions(defaultDims);
