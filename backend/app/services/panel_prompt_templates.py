@@ -81,6 +81,17 @@ Edge alignment intent:
 - Keep the checker grid aligned so edges can match adjacent faces later.
 
 ========================
+SCALE AND COMPOSITION GUIDANCE
+========================
+
+{scale_guidance}
+
+Visual harmony for this panel:
+- Scale patterns/elements appropriately for the {panel_size_description} {orientation} panel
+- Ensure composition looks balanced at the actual physical size ({panel_width_mm}mm × {panel_height_mm}mm)
+- Pattern density and element sizing should match the reference mockup's visual scale
+
+========================
 OUTPUT RULES
 ========================
 
@@ -112,10 +123,20 @@ CRITICAL REQUIREMENTS:
 6. High-quality, print-ready artwork
 7. The entire {panel_width_mm}mm × {panel_height_mm}mm area must be filled
 
+SCALE AND COMPOSITION GUIDANCE:
+{scale_guidance}
+
+VISUAL HARMONY:
+- Scale patterns/elements to look balanced at {panel_width_mm}mm × {panel_height_mm}mm physical size
+- Consider the {orientation} orientation when composing the design
+- Ensure text (if any) is sized to be readable at the actual physical dimensions
+- Make patterns/elements proportional to the panel's real-world scale
+- Avoid elements that would look too small or too large on a {panel_size_description} panel
+
 USER REQUEST:
 {user_prompt}
 
-OUTPUT: Generate exactly ONE flat panel texture at {aspect_ratio_lock} aspect ratio.
+OUTPUT: Generate exactly ONE flat panel texture at {aspect_ratio_lock} aspect ratio, with composition and scale appropriate for a {panel_size_description} {orientation} panel.
 """
 
     @staticmethod
@@ -172,6 +193,79 @@ OUTPUT: Generate exactly ONE flat panel texture at {aspect_ratio_lock} aspect ra
         # Fallback: use simplified fraction with max denominator
         fraction_limited = fraction.limit_denominator(20)
         return f"{fraction_limited.numerator}:{fraction_limited.denominator}"
+    
+    @staticmethod
+    def get_panel_size_description(width_mm: float, height_mm: float) -> str:
+        """Get a descriptive size category for the panel."""
+        area_cm2 = (width_mm / 10) * (height_mm / 10)
+        max_dim = max(width_mm, height_mm)
+        
+        if max_dim < 50:
+            return "very small"
+        elif max_dim < 100:
+            return "small"
+        elif max_dim < 200:
+            return "medium"
+        elif max_dim < 300:
+            return "large"
+        else:
+            return "very large"
+    
+    @staticmethod
+    def get_panel_orientation(width_mm: float, height_mm: float) -> str:
+        """Determine panel orientation."""
+        ratio = width_mm / height_mm
+        if ratio > 1.3:
+            return "landscape (horizontal)"
+        elif ratio < 0.77:  # 1/1.3
+            return "portrait (vertical)"
+        else:
+            return "square"
+    
+    @staticmethod
+    def generate_scale_guidance(
+        panel_width_mm: float, 
+        panel_height_mm: float,
+        face_name: str
+    ) -> str:
+        """Generate specific scale guidance based on panel dimensions."""
+        area_cm2 = (panel_width_mm / 10) * (panel_height_mm / 10)
+        max_dim = max(panel_width_mm, panel_height_mm)
+        ratio = panel_width_mm / panel_height_mm
+        
+        guidance = []
+        
+        # Size-based guidance
+        if max_dim < 50:
+            guidance.append("- This is a VERY SMALL panel - keep patterns fine and detailed, avoid large bold elements")
+        elif max_dim < 100:
+            guidance.append("- This is a SMALL panel - use moderately sized patterns, avoid oversized elements")
+        elif max_dim < 200:
+            guidance.append("- This is a MEDIUM panel - balance pattern size with good visibility")
+        elif max_dim < 300:
+            guidance.append("- This is a LARGE panel - use bold patterns and elements that won't look sparse")
+        else:
+            guidance.append("- This is a VERY LARGE panel - use large-scale patterns and bold elements")
+        
+        # Orientation-based guidance
+        if ratio > 1.5:
+            guidance.append("- LANDSCAPE orientation: favor horizontal patterns, stripes, or wide compositions")
+        elif ratio < 0.67:
+            guidance.append("- PORTRAIT orientation: favor vertical patterns, stripes, or tall compositions")
+        else:
+            guidance.append("- SQUARE/BALANCED orientation: centered compositions or uniform patterns work well")
+        
+        # Face-specific guidance
+        if face_name in ["front", "back"]:
+            guidance.append("- Primary visible face: this is a focal point, consider centering key visual elements")
+        elif face_name in ["top", "bottom"]:
+            guidance.append("- Top/bottom face: often viewed from above/below, ensure design looks good from that angle")
+        elif face_name in ["left", "right"]:
+            guidance.append("- Side panel: typically narrower, simpler patterns often work better")
+        elif face_name == "body":
+            guidance.append("- Cylindrical body: design will wrap around, ensure seamless horizontal tiling if possible")
+        
+        return "\n".join(guidance)
     
     @staticmethod
     def validate_user_prompt(prompt: str) -> tuple[bool, Optional[str]]:
@@ -246,10 +340,16 @@ OUTPUT: Generate exactly ONE flat panel texture at {aspect_ratio_lock} aspect ra
         # Calculate aspect ratio
         aspect_ratio = self.calculate_aspect_ratio(panel_width_mm, panel_height_mm)
         
+        # Generate scale and composition guidance
+        scale_guidance = self.generate_scale_guidance(panel_width_mm, panel_height_mm, face_name)
+        orientation = self.get_panel_orientation(panel_width_mm, panel_height_mm)
+        panel_size_description = self.get_panel_size_description(panel_width_mm, panel_height_mm)
+        
         # Log the generation details
         logger.info(f"[prompt-builder] Building prompt for {face_name} panel")
         logger.info(f"[prompt-builder] Dimensions: {panel_width_mm}mm × {panel_height_mm}mm ({panel_width_in:.2f}\" × {panel_height_in:.2f}\")")
         logger.info(f"[prompt-builder] Aspect ratio: {aspect_ratio}")
+        logger.info(f"[prompt-builder] Size: {panel_size_description}, Orientation: {orientation}")
         logger.info(f"[prompt-builder] Has reference mockup: {has_reference_mockup}")
         
         # Choose template based on whether we have a reference mockup
@@ -269,6 +369,9 @@ OUTPUT: Generate exactly ONE flat panel texture at {aspect_ratio_lock} aspect ra
             box_width_in=box_width_in,
             box_height_in=box_height_in,
             box_depth_in=box_depth_in,
+            scale_guidance=scale_guidance,
+            orientation=orientation,
+            panel_size_description=panel_size_description,
             user_prompt=user_prompt,
         )
         
@@ -297,6 +400,11 @@ OUTPUT: Generate exactly ONE flat panel texture at {aspect_ratio_lock} aspect ra
         panel_height_in = self.mm_to_inches(panel_height_mm)
         aspect_ratio = self.calculate_aspect_ratio(panel_width_mm, panel_height_mm)
         
+        # Generate scale and composition guidance
+        scale_guidance = self.generate_scale_guidance(panel_width_mm, panel_height_mm, face_name)
+        orientation = self.get_panel_orientation(panel_width_mm, panel_height_mm)
+        panel_size_description = self.get_panel_size_description(panel_width_mm, panel_height_mm)
+        
         prompt = self.SIMPLE_TEMPLATE.format(
             face_name=face_name,
             panel_width_in=panel_width_in,
@@ -304,6 +412,9 @@ OUTPUT: Generate exactly ONE flat panel texture at {aspect_ratio_lock} aspect ra
             panel_width_mm=int(panel_width_mm),
             panel_height_mm=int(panel_height_mm),
             aspect_ratio_lock=aspect_ratio,
+            scale_guidance=scale_guidance,
+            orientation=orientation,
+            panel_size_description=panel_size_description,
             user_prompt=user_prompt,
         )
         

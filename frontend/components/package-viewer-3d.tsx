@@ -59,8 +59,9 @@ function BoxPackage3D({
       const panelId = faceToPanelMap[i]
       const textureUrl = panelTextures[panelId]
 
+      // If texture exists, start with white color, otherwise use the base color
       const material = new THREE.MeshStandardMaterial({
-        color: color,
+        color: textureUrl ? 0xffffff : color,
         roughness: 0.3,
         metalness: 0.1,
       })
@@ -77,10 +78,24 @@ function BoxPackage3D({
         textureLoader.load(
           textureUrl,
           (texture) => {
+            // Disable texture flipping
             texture.flipY = false
+            
+            // Use ClampToEdge to prevent border artifacts
             texture.wrapS = THREE.ClampToEdgeWrapping
             texture.wrapT = THREE.ClampToEdgeWrapping
+            
+            // Use nearest or linear filtering to prevent edge bleeding
+            texture.minFilter = THREE.LinearFilter
+            texture.magFilter = THREE.LinearFilter
+            
+            // Ensure texture covers full UV space (0-1)
+            texture.repeat.set(1, 1)
+            texture.offset.set(0, 0)
+            
+            // Apply to material
             material.map = texture
+            material.color.setHex(0xffffff) // Set to white so texture shows true colors
             material.needsUpdate = true
             console.log(`[BoxPackage3D] ✅ Texture applied to ${panelId}`)
           },
@@ -173,21 +188,29 @@ function CylinderPackage3D({
   })
 
   const baseMaterial = useMemo(() => {
+    const bodyTexture = panelTextures["body"]
+    
     const material = new THREE.MeshStandardMaterial({
-      color: color,
+      color: bodyTexture ? 0xffffff : color,
       roughness: 0.3,
       metalness: 0.1,
     })
     
     // Apply body texture if available - load asynchronously
-    const bodyTexture = panelTextures["body"]
     if (bodyTexture) {
       const textureLoader = new THREE.TextureLoader()
       textureLoader.load(
         bodyTexture,
         (texture) => {
           texture.flipY = false
+          texture.wrapS = THREE.ClampToEdgeWrapping
+          texture.wrapT = THREE.ClampToEdgeWrapping
+          texture.minFilter = THREE.LinearFilter
+          texture.magFilter = THREE.LinearFilter
+          texture.repeat.set(1, 1)
+          texture.offset.set(0, 0)
           material.map = texture
+          material.color.setHex(0xffffff)
           material.needsUpdate = true
         },
         undefined,
@@ -213,20 +236,28 @@ function CylinderPackage3D({
   )
   
   const topMaterial = useMemo(() => {
+    const topTexture = panelTextures["top"]
+    
     const material = new THREE.MeshStandardMaterial({
-      color: color,
+      color: topTexture ? 0xffffff : color,
       roughness: 0.3,
       metalness: 0.1,
     })
     
-    const topTexture = panelTextures["top"]
     if (topTexture) {
       const textureLoader = new THREE.TextureLoader()
       textureLoader.load(
         topTexture,
         (texture) => {
           texture.flipY = false
+          texture.wrapS = THREE.ClampToEdgeWrapping
+          texture.wrapT = THREE.ClampToEdgeWrapping
+          texture.minFilter = THREE.LinearFilter
+          texture.magFilter = THREE.LinearFilter
+          texture.repeat.set(1, 1)
+          texture.offset.set(0, 0)
           material.map = texture
+          material.color.setHex(0xffffff)
           material.needsUpdate = true
         },
         undefined,
@@ -240,20 +271,28 @@ function CylinderPackage3D({
   }, [color, panelTextures])
   
   const bottomMaterial = useMemo(() => {
+    const bottomTexture = panelTextures["bottom"]
+    
     const material = new THREE.MeshStandardMaterial({
-      color: color,
+      color: bottomTexture ? 0xffffff : color,
       roughness: 0.3,
       metalness: 0.1,
     })
     
-    const bottomTexture = panelTextures["bottom"]
     if (bottomTexture) {
       const textureLoader = new THREE.TextureLoader()
       textureLoader.load(
         bottomTexture,
         (texture) => {
           texture.flipY = false
+          texture.wrapS = THREE.ClampToEdgeWrapping
+          texture.wrapT = THREE.ClampToEdgeWrapping
+          texture.minFilter = THREE.LinearFilter
+          texture.magFilter = THREE.LinearFilter
+          texture.repeat.set(1, 1)
+          texture.offset.set(0, 0)
           material.map = texture
+          material.color.setHex(0xffffff)
           material.needsUpdate = true
         },
         undefined,

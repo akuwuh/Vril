@@ -9,6 +9,7 @@ import { clearCachedModel } from "@/lib/model-cache";
 import { ProductState, ProductStatus } from "@/lib/product-types";
 import type { PanelId, PackageModel } from "@/lib/packaging-types";
 import { usePanelTexture } from "@/hooks/usePanelTexture";
+import { API_ENDPOINTS } from "@/lib/api-config";
 
 // Product editing props
 interface ProductAIChatPanelProps {
@@ -341,9 +342,8 @@ function PackagingAIChatPanel({
   const [isProcessing, setIsProcessing] = useState(false);
   const [history, setHistory] = useState<Array<{ prompt: string; response: string }>>([]);
   const [referenceMockup, setReferenceMockup] = useState<string | null>(null);
-  const [showAdvanced, setShowAdvanced] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
-  const { generateTexture, error } = usePanelTexture();
+  const { generateTexture, generateAllTextures, bulkGenerating, error } = usePanelTexture();
 
   // Validate prompt in real-time - memoized for performance
   const validatePrompt = useCallback((text: string) => {
@@ -413,6 +413,140 @@ function PackagingAIChatPanel({
       ]);
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleGenerateAll = async () => {
+    console.log("[AIChatPanel] handleGenerateAll called", { prompt, hasPackageModel: !!packageModel });
+    
+    if (!prompt.trim()) {
+      console.log("[AIChatPanel] Prompt is empty, returning");
+      return;
+    }
+    
+    // Check validation
+    if (validationError) {
+      setHistory([
+        ...history,
+        {
+          prompt: prompt.trim(),
+          response: validationError,
+        },
+      ]);
+      return;
+    }
+
+    if (!packageModel) {
+      console.log("[AIChatPanel] No package model");
+      setHistory([
+        ...history,
+        {
+          prompt,
+          response: "Package model not available.",
+        },
+      ]);
+      setPrompt("");
+      return;
+    }
+
+    setIsProcessing(true);
+    console.log("[AIChatPanel] Starting bulk texture generation...");
+
+    try {
+      // Prepare panel information
+      const panelIds = packageModel.panels.map(p => p.id);
+      const panelsInfo: Record<string, { width: number; height: number }> = {};
+      
+      for (const panel of packageModel.panels) {
+        let panelDimensions: { width: number; height: number };
+        
+        if (packageModel.type === "box") {
+          const { width, height, depth } = packageModel.dimensions;
+          if (panel.id === "front" || panel.id === "back") {
+            panelDimensions = { width, height };
+          } else if (panel.id === "left" || panel.id === "right") {
+            panelDimensions = { width: depth, height };
+          } else {
+            panelDimensions = { width, height: depth };
+          }
+        } else {
+          // Cylinder
+          const { width, height } = packageModel.dimensions;
+          if (panel.id === "body") {
+            const circumference = Math.PI * width;
+            panelDimensions = { width: circumference, height };
+          } else {
+            const radius = width / 2;
+            panelDimensions = { width: radius * 2, height: radius * 2 };
+          }
+        }
+        
+        panelsInfo[panel.id] = panelDimensions;
+      }
+
+      console.log("[AIChatPanel] Calling generateAllTextures with:", {
+        panel_ids: panelIds,
+        prompt: prompt.trim(),
+        package_type: packageModel.type,
+      });
+
+      const success = await generateAllTextures({
+        prompt: prompt.trim(),
+        package_type: packageModel.type,
+        package_dimensions: packageModel.dimensions,
+        panel_ids: panelIds,
+        panels_info: panelsInfo,
+        reference_mockup: referenceMockup || undefined,
+      });
+
+      if (success) {
+        console.log("[AIChatPanel] Bulk generation completed, fetching textures");
+        setHistory([
+          ...history,
+          {
+            prompt,
+            response: `Successfully generated textures for all ${panelIds.length} panels!`,
+          },
+        ]);
+        
+        // Fetch all textures and notify parent
+        for (const panelId of panelIds) {
+          try {
+            const response = await fetch(API_ENDPOINTS.packaging.getTexture(panelId));
+            if (response.ok) {
+              const data = await response.json();
+              if (data.texture_url) {
+                onTextureGenerated?.(panelId, data.texture_url);
+              }
+            }
+          } catch (err) {
+            console.warn(`[AIChatPanel] Could not fetch texture for ${panelId}:`, err);
+          }
+        }
+      } else {
+        const errorMsg = error || "Failed to generate textures. Please try again.";
+        console.error("[AIChatPanel] Bulk generation failed:", errorMsg);
+        setHistory([
+          ...history,
+          {
+            prompt,
+            response: errorMsg,
+          },
+        ]);
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "An error occurred";
+      console.error("[AIChatPanel] Error in handleGenerateAll:", err);
+      setHistory([
+        ...history,
+        {
+          prompt,
+          response: `Error: ${errorMessage}`,
+        },
+      ]);
+    } finally {
+      setPrompt("");
+      setIsProcessing(false);
+    }
   };
 
   const handleSubmit = async () => {
@@ -545,8 +679,9 @@ function PackagingAIChatPanel({
 
       console.log("[AIChatPanel] Texture generation result:", texture ? "success" : "failed", { error });
 
-      if (texture) {
+      if (texture && texture.texture_url) {
         console.log("[AIChatPanel] Texture generated successfully, calling onTextureGenerated");
+        console.log("[AIChatPanel] Texture URL:", texture.texture_url.substring(0, 100) + "...");
         setHistory([
           ...history,
           {
@@ -555,6 +690,15 @@ function PackagingAIChatPanel({
           },
         ]);
         onTextureGenerated?.(selectedPanelId, texture.texture_url);
+      } else if (texture && !texture.texture_url) {
+        console.error("[AIChatPanel] Texture object exists but texture_url is missing:", texture);
+        setHistory([
+          ...history,
+          {
+            prompt,
+            response: "Texture generation completed but no image was returned. The AI may have refused the request or encountered an error.",
+          },
+        ]);
       } else {
         const errorMsg = error || "Failed to generate texture. Please try again.";
         console.error("[AIChatPanel] Texture generation failed:", errorMsg);
@@ -583,129 +727,136 @@ function PackagingAIChatPanel({
   };
 
   return (
-    <div className="space-y-3 flex-1 flex flex-col">
+    <div className="space-y-3">
       {/* Prompt Input */}
-      <div className="space-y-2">
-        {!selectedPanelId && (
-          <p className="text-xs text-muted-foreground mb-1">
-            Select a panel first to apply changes
-          </p>
-        )}
-        
-        {/* Helpful examples */}
-        {selectedPanelId && !prompt && (
-          <div className="text-xs bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded p-2 space-y-1">
-            <p className="font-medium text-blue-900 dark:text-blue-100">💡 Example prompts:</p>
-            <p className="text-blue-700 dark:text-blue-300">• "Vintage cardboard texture with subtle grain"</p>
-            <p className="text-blue-700 dark:text-blue-300">• "Black and white geometric checkerboard pattern"</p>
-            <p className="text-blue-700 dark:text-blue-300">• "Navy blue with thin white diagonal stripes"</p>
-          </div>
-        )}
-        
-        <Textarea
-          placeholder={selectedPanelId ? "Be specific: describe style, colors, patterns..." : "Select a panel first..."}
-          value={prompt}
-          onChange={(e) => {
-            const newValue = e.target.value;
-            setPrompt(newValue);
-            // Validate immediately on change
-            validatePrompt(newValue);
-          }}
-          onBlur={(e) => {
-            // Re-validate on blur to catch any edge cases
-            validatePrompt(e.target.value);
-          }}
-          className={`min-h-[80px] resize-none text-sm transition-all ${
-            validationError ? "border-red-500 border-2 focus:border-red-600" : ""
-          }`}
-          disabled={isProcessing || !selectedPanelId}
-        />
-        
-        {/* Validation error */}
-        {validationError && (
-          <p className="text-xs text-red-600 dark:text-red-400">
-            ⚠️ {validationError}
-          </p>
-        )}
-        
-        {/* Advanced Options */}
-        <div className="border rounded p-2 space-y-2">
-          <button
-            onClick={() => setShowAdvanced(!showAdvanced)}
-            className="text-xs font-medium text-muted-foreground hover:text-foreground flex items-center justify-between w-full"
-          >
-            <span>⚙️ Advanced Options</span>
-            <span>{showAdvanced ? "▼" : "▶"}</span>
-          </button>
-          
-          {showAdvanced && (
-            <div className="space-y-2 pt-2 border-t">
-              <div className="space-y-1">
-                <label className="text-xs font-medium block">Reference Mockup (Optional)</label>
-                <p className="text-xs text-muted-foreground mb-1">
-                  Upload a reference image to match its style
-                </p>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleMockupUpload}
-                  className="text-xs w-full"
-                  disabled={isProcessing}
-                />
-                {referenceMockup && (
-                  <div className="flex items-center justify-between mt-1">
-                    <span className="text-xs text-green-600">✓ Reference loaded</span>
-                    <button
-                      onClick={() => setReferenceMockup(null)}
-                      className="text-xs text-red-600 hover:underline"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
+      <Textarea
+        placeholder="Describe style, colors, patterns..."
+        value={prompt}
+        onChange={(e) => {
+          const newValue = e.target.value;
+          setPrompt(newValue);
+          // Validate immediately on change
+          validatePrompt(newValue);
+        }}
+        onBlur={(e) => {
+          // Re-validate on blur to catch any edge cases
+          validatePrompt(e.target.value);
+        }}
+        className={`min-h-[70px] resize-none text-sm ${
+          validationError ? "border-red-500 border-2 focus:border-red-600" : ""
+        }`}
+        disabled={isProcessing || bulkGenerating}
+      />
+      
+      {/* Validation error */}
+      {validationError && (
+        <div className="text-xs text-red-600 dark:text-red-400 font-medium p-2 bg-red-50 dark:bg-red-950 rounded border-2 border-red-500">
+          {validationError}
         </div>
+      )}
+      
+      {/* Reference Upload */}
+      <div className="flex items-center gap-2">
+        <input
+          type="file"
+          id="reference-upload"
+          accept="image/*"
+          onChange={handleMockupUpload}
+          className="hidden"
+          disabled={isProcessing || bulkGenerating}
+        />
+        <label
+          htmlFor="reference-upload"
+          className={`text-xs font-semibold px-3 py-1.5 rounded border-2 border-black bg-background hover:bg-muted transition-colors cursor-pointer ${
+            isProcessing || bulkGenerating ? "opacity-50 cursor-not-allowed" : ""
+          }`}
+        >
+          Upload Reference
+        </label>
+        {referenceMockup && (
+          <>
+            <span className="text-xs font-medium text-green-600">Loaded</span>
+            <button
+              onClick={() => setReferenceMockup(null)}
+              className="text-xs font-semibold text-red-600 hover:underline"
+            >
+              Remove
+            </button>
+          </>
+        )}
+      </div>
+      
+      {/* Action Buttons */}
+      <div className="grid grid-cols-2 gap-2">
+        <Button
+          onClick={(e) => {
+            e.preventDefault();
+            console.log("[AIChatPanel] Generate panel button clicked", { prompt: prompt.trim(), isProcessing, selectedPanelId });
+            handleSubmit();
+          }}
+          disabled={!prompt.trim() || isProcessing || bulkGenerating || !selectedPanelId || !!validationError}
+          variant="outline"
+          className="w-full text-xs font-semibold"
+          size="sm"
+        >
+          {isProcessing && !bulkGenerating ? (
+            <>
+              <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+              Generating...
+            </>
+          ) : (
+            "Generate Panel"
+          )}
+        </Button>
         
         <Button
           onClick={(e) => {
             e.preventDefault();
-            console.log("[AIChatPanel] Button clicked", { prompt: prompt.trim(), isProcessing, selectedPanelId });
-            handleSubmit();
+            console.log("[AIChatPanel] Generate all button clicked", { prompt: prompt.trim(), isProcessing, bulkGenerating });
+            handleGenerateAll();
           }}
-          disabled={!prompt.trim() || isProcessing || !selectedPanelId || !!validationError}
-          variant="outline"
-          className="w-full"
+          disabled={!prompt.trim() || isProcessing || bulkGenerating || !!validationError}
+          variant="default"
+          className="w-full text-xs font-semibold"
           size="sm"
         >
-          {isProcessing ? (
+          {bulkGenerating ? (
             <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Generating...
+              <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+              Generating All...
             </>
           ) : (
-            "Generate Panel Design"
+            "Generate All Panels"
           )}
         </Button>
       </div>
 
-      {isProcessing && (
-        <div className="text-xs text-muted-foreground p-2 bg-muted rounded">
-          Generating texture... This may take 10-30 seconds.
+      {/* Progress Status */}
+      {(isProcessing || bulkGenerating) && (
+        <div className="text-xs p-2.5 bg-muted rounded border-2 border-black">
+          {bulkGenerating ? (
+            <div className="space-y-0.5">
+              <p className="font-semibold">Generating all panels</p>
+              <p className="text-muted-foreground">This may take 1-3 minutes</p>
+            </div>
+          ) : (
+            <p className="text-muted-foreground">Generating (10-30 seconds)</p>
+          )}
         </div>
       )}
 
+      {/* History */}
       {history.length > 0 && (
-        <div className="space-y-2 flex-1 flex flex-col min-h-0">
-          <div className="space-y-2 overflow-y-auto flex-1">
+        <div className="space-y-2 pt-2 border-t-2 border-black">
+          <div className="text-xs font-semibold text-muted-foreground">HISTORY</div>
+          <div className="space-y-2 max-h-[200px] overflow-y-auto">
             {history
               .slice()
               .reverse()
               .map((item, i) => (
-                <div key={i} className="text-xs p-2.5 bg-muted rounded-lg border-2 border-black">
-                  <p className="font-medium mb-1">{item.prompt}</p>
-                  <p className="text-muted-foreground">{item.response}</p>
+                <div key={i} className="text-xs p-2.5 bg-muted/50 rounded border-2 border-black">
+                  <p className="font-semibold mb-1.5">{item.prompt}</p>
+                  <p className="text-muted-foreground text-[11px] leading-relaxed">{item.response}</p>
                 </div>
               ))}
           </div>

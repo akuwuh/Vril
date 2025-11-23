@@ -7,6 +7,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
 export const API_ENDPOINTS = {
   packaging: {
     generate: `${API_BASE_URL}/packaging/panels/generate`,
+    generateAll: `${API_BASE_URL}/packaging/panels/generate-all`,
     getTexture: (panelId: string) => `${API_BASE_URL}/packaging/panels/${panelId}/texture`,
     deleteTexture: (panelId: string) => `${API_BASE_URL}/packaging/panels/${panelId}/texture`,
     getState: `${API_BASE_URL}/packaging/state`,

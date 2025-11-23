@@ -28,6 +28,15 @@ class PanelGenerateRequest(BaseModel):
     reference_mockup: Optional[str] = Field(None, description="Optional base64-encoded reference mockup image for style matching")
 
 
+class BulkPanelGenerateRequest(BaseModel):
+    prompt: str = Field(..., min_length=3, max_length=2000, description="Design prompt for all panels")
+    package_type: str = Field(..., description="Package type: 'box' or 'cylinder'")
+    package_dimensions: dict = Field(..., description="Full package dimensions: {width, height, depth} in mm")
+    panel_ids: list[str] = Field(..., description="List of panel IDs to generate")
+    panels_info: dict = Field(..., description="Map of panel_id to panel dimensions {panel_id: {width, height}}")
+    reference_mockup: Optional[str] = Field(None, description="Optional base64-encoded reference mockup image for style matching")
+
+
 def _track_background_task(task: asyncio.Task) -> None:
     """Keep a reference to background work so it isn't GC'd prematurely."""
     _background_tasks.add(task)
@@ -41,6 +50,11 @@ async def generate_panel_texture(request: PanelGenerateRequest):
     logger.info(f"[packaging-router] Request details: prompt='{request.prompt[:50]}...', package_type={request.package_type}")
     
     state = get_packaging_state()
+    
+    # Clear old texture for this panel to avoid polling confusion
+    if request.panel_id in state.panel_textures:
+        logger.info(f"[packaging-router] Clearing old texture for panel {request.panel_id}")
+        del state.panel_textures[request.panel_id]
     
     # Update state with current package info
     state.package_type = request.package_type
@@ -100,6 +114,110 @@ async def generate_panel_texture(request: PanelGenerateRequest):
         "status": "generating",
         "panel_id": request.panel_id,
         "message": f"Generating texture for {request.panel_id} panel",
+    }
+
+
+@router.post("/panels/generate-all")
+async def generate_all_panels(request: BulkPanelGenerateRequest):
+    """Generate textures for all panels at once."""
+    logger.info(f"[packaging-router] Received bulk generation request for {len(request.panel_ids)} panels")
+    logger.info(f"[packaging-router] Panels: {request.panel_ids}")
+    logger.info(f"[packaging-router] Prompt: '{request.prompt[:50]}...'")
+    
+    state = get_packaging_state()
+    
+    # Clear old textures for all panels being regenerated
+    for panel_id in request.panel_ids:
+        if panel_id in state.panel_textures:
+            logger.info(f"[packaging-router] Clearing old texture for panel {panel_id}")
+            del state.panel_textures[panel_id]
+    
+    # Update state for bulk generation
+    state.package_type = request.package_type
+    state.package_dimensions = request.package_dimensions
+    state.bulk_generation_in_progress = True
+    state.generating_panels = request.panel_ids.copy()
+    state.last_error = None
+    save_packaging_state(state)
+    
+    logger.info(f"[packaging-router] Starting bulk texture generation for {len(request.panel_ids)} panels")
+    
+    # Run generation in background
+    async def _generate_all():
+        completed_count = 0
+        failed_panels = []
+        
+        for panel_id in request.panel_ids:
+            try:
+                # Update state to show current panel being generated
+                current_state = get_packaging_state()
+                current_state.generating_panel = panel_id
+                save_packaging_state(current_state)
+                
+                logger.info(f"[packaging-router] Generating texture for panel {panel_id} ({completed_count + 1}/{len(request.panel_ids)})")
+                
+                panel_dimensions = request.panels_info.get(panel_id, {})
+                
+                texture_url = await panel_generation_service.generate_panel_texture(
+                    panel_id=panel_id,
+                    prompt=request.prompt,
+                    package_type=request.package_type,
+                    panel_dimensions=panel_dimensions,
+                    package_dimensions=request.package_dimensions,
+                    reference_mockup=request.reference_mockup,
+                )
+                
+                # Get fresh state to avoid race conditions
+                current_state = get_packaging_state()
+                
+                if texture_url:
+                    texture = PanelTexture(
+                        panel_id=panel_id,
+                        texture_url=texture_url,
+                        prompt=request.prompt,
+                        dimensions=panel_dimensions,
+                    )
+                    current_state.set_panel_texture(panel_id, texture)
+                    
+                    # Remove this panel from generating_panels list
+                    if panel_id in current_state.generating_panels:
+                        current_state.generating_panels.remove(panel_id)
+                    
+                    save_packaging_state(current_state)
+                    completed_count += 1
+                    logger.info(f"[packaging-router] Successfully generated texture for panel {panel_id} ({completed_count}/{len(request.panel_ids)})")
+                else:
+                    logger.error(f"[packaging-router] Texture generation returned no image for panel {panel_id}")
+                    failed_panels.append(panel_id)
+                    
+            except Exception as e:
+                logger.error(f"[packaging-router] Error generating texture for panel {panel_id}: {e}", exc_info=True)
+                failed_panels.append(panel_id)
+        
+        # Update final state
+        final_state = get_packaging_state()
+        final_state.bulk_generation_in_progress = False
+        final_state.generating_panel = None
+        final_state.generating_panels = []
+        
+        if failed_panels:
+            error_msg = f"Failed to generate textures for panels: {', '.join(failed_panels)}"
+            final_state.last_error = error_msg
+            logger.error(f"[packaging-router] Bulk generation completed with errors: {error_msg}")
+        else:
+            final_state.last_error = None
+            logger.info(f"[packaging-router] Bulk generation completed successfully for all {len(request.panel_ids)} panels")
+        
+        save_packaging_state(final_state)
+    
+    task = asyncio.create_task(_generate_all())
+    _track_background_task(task)
+    
+    return {
+        "status": "generating",
+        "panel_ids": request.panel_ids,
+        "message": f"Generating textures for {len(request.panel_ids)} panels",
+        "total_panels": len(request.panel_ids),
     }
 
 

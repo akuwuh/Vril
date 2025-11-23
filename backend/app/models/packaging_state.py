@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Dict, Literal, Optional
+from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -32,7 +32,9 @@ class PackagingState(BaseModel):
     package_dimensions: Dict[str, float] = Field(default_factory=dict)  # width, height, depth
     panel_textures: Dict[str, PanelTexture] = Field(default_factory=dict)  # panel_id -> texture
     in_progress: bool = False
-    generating_panel: Optional[str] = None  # panel_id currently being generated
+    generating_panel: Optional[str] = None  # panel_id currently being generated (for single generation)
+    generating_panels: List[str] = Field(default_factory=list)  # panel_ids being generated (for bulk generation)
+    bulk_generation_in_progress: bool = False
     last_error: Optional[str] = None
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
@@ -46,6 +48,8 @@ class PackagingState(BaseModel):
         self.last_error = error_message
         self.in_progress = False
         self.generating_panel = None
+        self.bulk_generation_in_progress = False
+        self.generating_panels = []
         self.updated_at = _utcnow()
     
     def set_panel_texture(self, panel_id: str, texture: PanelTexture) -> None:
