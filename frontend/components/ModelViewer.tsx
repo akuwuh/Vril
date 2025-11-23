@@ -172,6 +172,15 @@ export default function ModelViewer({
     return () => clearTimeout(timer);
   }, [zoomAction]);
 
+  // Don't render Canvas until we have a model URL to prevent WebGL context starvation
+  if (!modelUrl && !error) {
+    return (
+      <div className="w-full h-full relative overflow-hidden flex items-center justify-center bg-muted/30">
+        <div className="text-muted-foreground">Loading...</div>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full h-full relative overflow-hidden">
       <Canvas
