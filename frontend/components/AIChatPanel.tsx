@@ -517,6 +517,9 @@ function PackagingAIChatPanel({
         package_type: packageModel.type,
       });
 
+      // Notify parent that generation is starting
+      onGenerationStart?.();
+
       const success = await generateAllTextures({
         prompt: prompt.trim(),
         package_type: packageModel.type,

@@ -175,14 +175,19 @@ async def generate_all_panels(request: BulkPanelGenerateRequest):
 MODIFICATIONS REQUESTED:
 {request.prompt}
 
+CRITICAL DESIGN REQUIREMENTS:
+- Maintain full-bleed coverage on all visible faces (no white borders)
+- The design MUST extend completely to all edges
+- Graphics and patterns should reach the very edges of each panel
+
 OUTPUT REQUIREMENTS:
 - Generate a 3D product photograph showing the modified design
 - Show from a 3/4 angle view with multiple visible faces
-- Apply the requested changes while maintaining package structure
+- Apply the requested changes while maintaining edge-to-edge coverage
 - Professional product photography style with good lighting
 - Dimensions: {request.package_dimensions.get('width', 100)}mm × {request.package_dimensions.get('height', 150)}mm × {request.package_dimensions.get('depth', 100)}mm
 
-Generate the modified 3D mockup."""
+Generate the modified 3D mockup with complete edge-to-edge design coverage."""
             
             else:
                 # CREATE FLOW: New design from scratch
@@ -198,14 +203,20 @@ SPECIFICATIONS:
 - Package type: {request.package_type}
 - Dimensions: {request.package_dimensions.get('width', 100)}mm × {request.package_dimensions.get('height', 150)}mm × {request.package_dimensions.get('depth', 100)}mm
 
+CRITICAL DESIGN REQUIREMENTS:
+- The design MUST cover ALL visible faces completely from edge to edge
+- NO white borders or margins on the package faces
+- Graphics and patterns should extend to the very edges of each panel
+- Full-bleed coverage on all sides (top, front, back, left, right)
+
 OUTPUT REQUIREMENTS:
 - Show from a 3/4 angle view with multiple visible faces
-- Display the complete design concept
+- Display the complete design concept with edge-to-edge coverage
 - Professional product photography style
 - Good lighting and shadows
 - Clear, sharp, high-quality rendering
 
-Generate a complete 3D mockup."""
+Generate a complete 3D mockup with full-coverage design on all faces."""
             
             # Generate 3D mockup
             mockup_images = await gemini_image_service.generate_product_images(

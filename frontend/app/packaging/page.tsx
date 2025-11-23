@@ -700,6 +700,7 @@ function Packaging() {
                 selectedPanelId={selectedPanelId}
                 packageModel={packageModel}
                 onTextureGenerated={handleTextureGenerated}
+                onGenerationStart={() => setIsGenerating(true)}
                 packagingState={packagingState}
                 isGenerating={isGenerating}
               />

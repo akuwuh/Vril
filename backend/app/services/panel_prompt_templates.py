@@ -114,17 +114,21 @@ Panel: {face_name}
 Size: {panel_width_mm}mm × {panel_height_mm}mm
 Aspect Ratio: {aspect_ratio_lock} (maintain exactly)
 
+CRITICAL - FULL BLEED REQUIREMENTS:
+- The design MUST fill the ENTIRE image from edge to edge
+- NO white borders, NO margins, NO padding
+- Design extends completely to all 4 edges (top, bottom, left, right)
+- Every pixel of the {panel_width_mm}mm × {panel_height_mm}mm area must be covered
+- Background and design elements reach all corners
+
 TASK:
-The 3D mockup shows the complete package design. Extract the {face_name} panel and create a flat, print-ready texture.
+1. Study the 3D mockup to see the {face_name} panel design
+2. Extract that exact design as a flat texture
+3. Scale it to fill the ENTIRE frame edge-to-edge
+4. Ensure zero white space around edges
 
-REQUIREMENTS:
-- Study the 3D mockup to see how the {face_name} panel looks
-- Extract that panel's design as a flat texture
-- Match the colors, graphics, and style from the mockup
-- Output at {aspect_ratio_lock} aspect ratio
-- Full-bleed design (extends to all edges)
-
-Generate a flat panel texture that matches what's shown on the {face_name} face of the mockup."""
+OUTPUT:
+Flat, print-ready panel texture at {aspect_ratio_lock} ratio with complete edge-to-edge coverage."""
 
     # Simple texture template (for basic requests without reference mockup)
     SIMPLE_TEMPLATE = """Generate a flat packaging panel texture with the following specifications:
