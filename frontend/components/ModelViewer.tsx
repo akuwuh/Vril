@@ -68,42 +68,39 @@ function ModelLoader({
   // Clone the scene to avoid modifying the original
   const clonedScene = scene.clone();
 
-  // Apply wireframe/texture mode to all meshes in the scene
-  clonedScene.traverse((child) => {
-    if (child instanceof THREE.Mesh) {
-      if (child.material) {
-        // Handle both single material and material arrays
-        const materials = Array.isArray(child.material) ? child.material : [child.material];
+  // Apply material updates reactively
+  useEffect(() => {
+    clonedScene.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        if (child.material) {
+          const materials = Array.isArray(child.material) ? child.material : [child.material];
 
-        materials.forEach((material) => {
-          if (material instanceof THREE.MeshStandardMaterial || material instanceof THREE.MeshPhysicalMaterial) {
-            material.wireframe = wireframe;
+          materials.forEach((material) => {
+            if (material instanceof THREE.MeshStandardMaterial || material instanceof THREE.MeshPhysicalMaterial) {
+              material.wireframe = wireframe;
 
-            if (wireframe) {
-              // Wireframe mode: emissive blue
-              material.emissive = new THREE.Color("#60a5fa");
-              material.emissiveIntensity = 0.2;
-              material.color = new THREE.Color("#60a5fa");
-            } else if (showColor) {
-              // Base texture mode: reset to original colors
-              material.emissive = new THREE.Color(0, 0, 0);
-              material.emissiveIntensity = 0;
-              // Keep original colors
-            } else {
-              // Default: blue tint
-              material.emissive = new THREE.Color("#60a5fa");
-              material.emissiveIntensity = 0.1;
-              material.color = new THREE.Color("#60a5fa");
+              if (wireframe) {
+                material.emissive = new THREE.Color("#60a5fa");
+                material.emissiveIntensity = 0.2;
+                material.color = new THREE.Color("#60a5fa");
+              } else if (showColor) {
+                material.emissive = new THREE.Color(0, 0, 0);
+                material.emissiveIntensity = 0;
+              } else {
+                material.emissive = new THREE.Color("#60a5fa");
+                material.emissiveIntensity = 0.1;
+                material.color = new THREE.Color("#60a5fa");
+              }
+
+              material.opacity = opacity;
+              material.transparent = opacity < 1;
+              material.needsUpdate = true;
             }
-
-            material.opacity = opacity;
-            material.transparent = opacity < 1;
-            material.needsUpdate = true;
-          }
-        });
+          });
+        }
       }
-    }
-  });
+    });
+  }, [clonedScene, wireframe, showColor, opacity]);
 
   useEffect(() => {
     onLoad?.();
@@ -288,19 +285,12 @@ export default function ModelViewer({
           />
           <directionalLight position={[-5, 3, -5]} intensity={0.3 * contrast} />
 
-          {modelUrl ? (
+          {modelUrl && (
             <ModelLoaderWrapper
               url={modelUrl}
               wireframe={wireframe}
               showColor={showColor}
               onLoad={handleModelLoaded}
-            />
-          ) : (
-            <CubeModel
-              wireframe={wireframe}
-              showColor={showColor}
-              color={selectedColor}
-              texture={selectedTexture}
             />
           )}
 

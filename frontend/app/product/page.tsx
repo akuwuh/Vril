@@ -50,16 +50,16 @@ export default function ProductPage() {
     }
   }, []);
 
-  const handleViewerModelLoaded = useCallback(() => {
-    if (!pendingRevokeRef.current.length) {
-      return;
+  const handleViewerModelLoaded = useCallback((loadedUrl: string) => {
+    // Revoke old blobs only after new model loads successfully
+    if (pendingRevokeRef.current.length > 0) {
+      pendingRevokeRef.current.forEach((blobUrl) => {
+        if (blobUrl.startsWith("blob:") && blobUrl !== loadedUrl) {
+          URL.revokeObjectURL(blobUrl);
+        }
+      });
+      pendingRevokeRef.current = [];
     }
-    pendingRevokeRef.current.forEach((blobUrl) => {
-      if (blobUrl.startsWith("blob:")) {
-        URL.revokeObjectURL(blobUrl);
-      }
-    });
-    pendingRevokeRef.current = [];
   }, []);
 
   const hydrateProductState = useCallback(async () => {
@@ -70,10 +70,12 @@ export default function ProductPage() {
       const remoteModelUrl = state.trellis_output?.model_file;
       if (latestIteration && remoteModelUrl) {
         const iterationId = latestIteration.created_at;
-        if (latestIterationIdRef.current !== iterationId || !currentModelUrl) {
-          objectUrlRef.current = null;
-          setCurrentModelUrl(remoteModelUrl);
-          latestIterationIdRef.current = iterationId;
+        // Skip if we already have this exact iteration cached as a blob
+        if (
+          latestIterationIdRef.current === iterationId &&
+          objectUrlRef.current?.startsWith("blob:")
+        ) {
+          return;
         }
         try {
           const cachedUrl = await getCachedModelUrl(iterationId, remoteModelUrl);
@@ -86,7 +88,7 @@ export default function ProductPage() {
     } catch (error) {
       console.error("Failed to load product state:", error);
     }
-  }, [applyModelUrl, currentModelUrl]);
+  }, [applyModelUrl]);
 
   useEffect(() => {
     let isMounted = true;
