@@ -215,6 +215,7 @@ export default function ModelViewer({
   autoRotate = true,
 }: ModelViewerProps) {
   const controlsRef = useRef<OrbitControlsImpl>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
   const [contrast, setContrast] = useState(3.0);
   const [exposure, setExposure] = useState(2.0);
   const [showColor, setShowColor] = useState(true);
@@ -248,15 +249,34 @@ export default function ModelViewer({
     }
   }, [zoomAction]);
 
+  // Cleanup WebGL context on unmount to prevent context loss
+  useEffect(() => {
+    return () => {
+      // Clean up any textures and geometries loaded by useGLTF
+      if (modelUrl) {
+        try {
+          useGLTF.clear(modelUrl);
+        } catch (e) {
+          // Ignore errors during cleanup
+        }
+      }
+    };
+  }, [modelUrl]);
+
   return (
-    <div className="w-full h-full relative overflow-hidden">
+    <div ref={canvasRef} className="w-full h-full relative overflow-hidden">
       <Canvas
+        key="product-viewer-canvas"
         camera={{ position: [2, 1.5, 3.5], fov: 50 }}
         gl={{
           toneMapping: 2, // ACESFilmic tone mapping
           toneMappingExposure: exposure,
+          preserveDrawingBuffer: false,
+          powerPreference: "high-performance",
+          antialias: true,
         }}
         className="w-full h-full"
+        frameloop="always"
       >
         {/* Background color based on theme */}
         <color attach="background" args={["hsl(var(--muted)/0.3)"]} />

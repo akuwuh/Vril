@@ -95,6 +95,18 @@ function BoxPackage3D({
     })
   }, [panelTextures, selectedPanelId, color])
 
+  // Cleanup materials and textures on unmount
+  useEffect(() => {
+    return () => {
+      materials.forEach((material) => {
+        if (material.map) {
+          material.map.dispose();
+        }
+        material.dispose();
+      });
+    };
+  }, [materials]);
+
   const handleClick = (event: any) => {
     if (!onPanelSelect) return
 
@@ -266,6 +278,18 @@ function CylinderPackage3D({
     return material
   }, [color, panelTextures])
 
+  // Cleanup materials and textures on unmount
+  useEffect(() => {
+    return () => {
+      [baseMaterial, selectedMaterial, topMaterial, bottomMaterial].forEach((material) => {
+        if (material.map) {
+          material.map.dispose();
+        }
+        material.dispose();
+      });
+    };
+  }, [baseMaterial, selectedMaterial, topMaterial, bottomMaterial]);
+
   const handleBodyClick = (event: THREE.Event) => {
     if (!onPanelSelect) return
     event.stopPropagation()
@@ -384,9 +408,25 @@ function Package3D({ model, selectedPanelId, onPanelSelect, color, panelTextures
 }
 
 export function PackageViewer3D(props: PackageViewer3DProps) {
+  // Cleanup effect to dispose of textures on unmount
+  useEffect(() => {
+    return () => {
+      // Cleanup will be handled by Canvas unmount
+    };
+  }, []);
+
   return (
     <div className="w-full h-full bg-gradient-to-br from-slate-50 to-slate-100 rounded-lg border border-border overflow-hidden relative">
-      <Canvas shadows>
+      <Canvas 
+        key="packaging-viewer-canvas"
+        shadows
+        gl={{
+          preserveDrawingBuffer: false,
+          powerPreference: "high-performance",
+          antialias: true,
+        }}
+        frameloop="always"
+      >
         <PerspectiveCamera makeDefault position={[4, 3, 4]} />
         <OrbitControls enablePan={true} enableZoom={true} enableRotate={true} minDistance={2} maxDistance={10} />
 

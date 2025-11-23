@@ -41,6 +41,19 @@ export default function Packaging() {
     setSelectedPanelId(null); // Reset selection when model changes
   }, [packageType, dimensions.width, dimensions.height, dimensions.depth]);
 
+  // Cleanup on unmount (when navigating away)
+  useEffect(() => {
+    return () => {
+      console.log('[PackagingPage] Cleaning up on unmount');
+      // Cleanup panel textures (revoke blob URLs if any)
+      Object.values(panelTextures).forEach((textureUrl) => {
+        if (textureUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(textureUrl);
+        }
+      });
+    };
+  }, [panelTextures]);
+
 
   const packageTypes: { type: PackageType; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
     { type: "box", label: "Box", icon: Box },

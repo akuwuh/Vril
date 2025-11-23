@@ -89,6 +89,17 @@ export default function ProductPage() {
     }
   }, [zoomAction]);
 
+  // Cleanup on unmount (when navigating away)
+  useEffect(() => {
+    return () => {
+      console.log('[ProductPage] Cleaning up on unmount');
+      // Clear any cached model to free memory
+      if (latestIterationIdRef.current) {
+        clearCachedModel(latestIterationIdRef.current);
+      }
+    };
+  }, []);
+
   const colors = [
     { name: "Blue", value: "#60a5fa" },
     { name: "White", value: "#ffffff" },
