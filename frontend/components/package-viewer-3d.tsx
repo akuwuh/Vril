@@ -12,7 +12,7 @@ interface PackageViewer3DProps {
   selectedPanelId?: PanelId | null
   onPanelSelect?: (panelId: PanelId | null) => void
   color?: string
-  panelTextures?: Record<PanelId, string>
+  panelTextures?: Partial<Record<PanelId, string>>
 }
 
 function BoxPackage3D({
@@ -26,7 +26,7 @@ function BoxPackage3D({
   selectedPanelId?: PanelId | null
   onPanelSelect?: (panelId: PanelId | null) => void
   color?: string
-  panelTextures?: Record<PanelId, string>
+  panelTextures?: Partial<Record<PanelId, string>>
 }) {
   const meshRef = useRef<THREE.Mesh>(null)
   const { width, height, depth } = dimensions
@@ -172,7 +172,7 @@ function CylinderPackage3D({
   selectedPanelId?: PanelId | null
   onPanelSelect?: (panelId: PanelId | null) => void
   color?: string
-  panelTextures?: Record<PanelId, string>
+  panelTextures?: Partial<Record<PanelId, string>>
 }) {
   const groupRef = useRef<THREE.Group>(null)
   const { width, height } = dimensions
@@ -425,7 +425,16 @@ function Package3D({ model, selectedPanelId, onPanelSelect, color, panelTextures
 export function PackageViewer3D(props: PackageViewer3DProps) {
   return (
     <div className="w-full h-full bg-gradient-to-br from-slate-50 to-slate-100 rounded-lg border border-border overflow-hidden relative">
-      <Canvas shadows>
+      <Canvas 
+        key="packaging-viewer-canvas"
+        shadows
+        gl={{
+          preserveDrawingBuffer: false,
+          powerPreference: "high-performance",
+          antialias: true,
+        }}
+        frameloop="always"
+      >
         <PerspectiveCamera makeDefault position={[4, 3, 4]} />
         <OrbitControls enablePan={true} enableZoom={true} enableRotate={true} minDistance={2} maxDistance={10} />
 

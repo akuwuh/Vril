@@ -8,98 +8,49 @@ import * as THREE from "three";
 
 interface ModelViewerProps {
   modelUrl?: string;
-  isLoading?: boolean;
   error?: string | null;
-  selectedColor?: string;
-  selectedTexture?: string;
   lightingMode?: "studio" | "sunset" | "warehouse" | "forest";
   wireframe?: boolean;
   zoomAction?: "in" | "out" | null;
   autoRotate?: boolean;
 }
 
-function CubeModel({
-  wireframe,
-  showColor,
-  color,
-  texture,
-}: {
-  wireframe: boolean;
-  showColor: boolean;
-  color?: string;
-  texture?: string;
-}) {
-  const materialColor = color || "#60a5fa";
-  const roughness = texture === "glossy" ? 0.1 : 0.7;
-  const metalness = texture === "glossy" ? 0.8 : 0.3;
-
-  // Simple cube mesh (fallback when no model URL provided)
-  return (
-    <mesh>
-      <boxGeometry args={[2, 2, 2]} />
-      <meshStandardMaterial
-        color={showColor ? materialColor : materialColor}
-        wireframe={wireframe}
-        emissive={wireframe ? materialColor : undefined}
-        emissiveIntensity={wireframe ? 0.2 : 0}
-        metalness={metalness}
-        roughness={roughness}
-      />
-    </mesh>
-  );
-}
-
 function ModelLoader({
   url,
   wireframe,
-  showColor,
   opacity,
   onLoad,
 }: {
   url: string;
   wireframe: boolean;
-  showColor: boolean;
   opacity: number;
   onLoad?: () => void;
 }) {
   const { scene } = useGLTF(url);
-
-  // Clone the scene to avoid modifying the original
   const clonedScene = scene.clone();
 
-  // Apply material updates reactively
   useEffect(() => {
     clonedScene.traverse((child) => {
-      if (child instanceof THREE.Mesh) {
-        if (child.material) {
-          const materials = Array.isArray(child.material) ? child.material : [child.material];
+      if (child instanceof THREE.Mesh && child.material) {
+        const materials = Array.isArray(child.material) ? child.material : [child.material];
 
-          materials.forEach((material) => {
-            if (material instanceof THREE.MeshStandardMaterial || material instanceof THREE.MeshPhysicalMaterial) {
-              material.wireframe = wireframe;
+        materials.forEach((material) => {
+          if (material instanceof THREE.MeshStandardMaterial || material instanceof THREE.MeshPhysicalMaterial) {
+            material.wireframe = wireframe;
+            material.opacity = opacity;
+            material.transparent = opacity < 1;
+            material.needsUpdate = true;
 
-              if (wireframe) {
-                material.emissive = new THREE.Color("#60a5fa");
-                material.emissiveIntensity = 0.2;
-                material.color = new THREE.Color("#60a5fa");
-              } else if (showColor) {
-                material.emissive = new THREE.Color(0, 0, 0);
-                material.emissiveIntensity = 0;
-              } else {
-                material.emissive = new THREE.Color("#60a5fa");
-                material.emissiveIntensity = 0.1;
-                material.color = new THREE.Color("#60a5fa");
-              }
-
-              material.opacity = opacity;
-              material.transparent = opacity < 1;
-              material.needsUpdate = true;
+            if (wireframe) {
+              material.emissive = new THREE.Color("#60a5fa");
+              material.emissiveIntensity = 0.2;
+              material.color = new THREE.Color("#60a5fa");
             }
-          });
-        }
+          }
+        });
       }
     });
-  }, [clonedScene, wireframe, showColor, opacity]);
+  }, [clonedScene, wireframe, opacity]);
 
   useEffect(() => {
     onLoad?.();
@@ -108,25 +59,17 @@ function ModelLoader({
   return <primitive object={clonedScene} />;
 }
 
-function ModelLoaderWrapper({
-  url,
-  wireframe,
-  showColor,
-}: {
-  url: string;
-  wireframe: boolean;
-  showColor: boolean;
-}) {
+function ModelLoaderWrapper({ url, wireframe }: { url: string; wireframe: boolean }) {
   const [opacity, setOpacity] = useState(0);
   const fadeFrameRef = useRef<number | null>(null);
-  const lastUrlRef = useRef<string | null>(null);
-  const hasLoadedRef = useRef(false);
+  const hasStartedRef = useRef(false);
+  const currentUrlRef = useRef(url);
 
+  // Reset animation state when URL changes
   useEffect(() => {
-    if (lastUrlRef.current !== url) {
-      console.log(`[ModelViewer] New URL detected: ${url.substring(0, 60)}...`);
-      lastUrlRef.current = url;
-      hasLoadedRef.current = false;
+    if (currentUrlRef.current !== url) {
+      currentUrlRef.current = url;
+      hasStartedRef.current = false;
       setOpacity(0);
       if (fadeFrameRef.current) {
         cancelAnimationFrame(fadeFrameRef.current);
@@ -135,13 +78,10 @@ function ModelLoaderWrapper({
     }
   }, [url]);
 
-  const handleLoaded = useCallback(() => {
-    if (hasLoadedRef.current) {
-      console.log(`[ModelViewer] Skipping duplicate onLoad for same URL`);
-      return;
-    }
-    hasLoadedRef.current = true;
-    console.log(`[ModelViewer] GLB loaded successfully, starting fade-in animation`);
+  const startFadeIn = useCallback(() => {
+    if (hasStartedRef.current) return;
+    hasStartedRef.current = true;
+    
     const duration = 350;
     const start = performance.now();
 
@@ -150,14 +90,13 @@ function ModelLoaderWrapper({
       setOpacity(progress);
       if (progress < 1) {
         fadeFrameRef.current = requestAnimationFrame(animate);
-      } else {
-        console.log(`[ModelViewer] Fade-in complete`);
       }
     };
 
     fadeFrameRef.current = requestAnimationFrame(animate);
   }, []);
 
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (fadeFrameRef.current) {
@@ -169,19 +108,9 @@ function ModelLoaderWrapper({
 
   return (
     <Suspense fallback={null}>
-      <ModelLoader
-        url={url}
-        wireframe={wireframe}
-        showColor={showColor}
-        opacity={opacity}
-        onLoad={handleLoaded}
-      />
+      <ModelLoader url={url} wireframe={wireframe} opacity={opacity} onLoad={startFadeIn} />
     </Suspense>
   );
-}
-
-function LoadingPlaceholder() {
-  return null;
 }
 
 function ErrorDisplay({ message }: { message: string }) {
@@ -213,90 +142,69 @@ function ErrorDisplay({ message }: { message: string }) {
 export default function ModelViewer({
   modelUrl,
   error,
-  selectedColor,
-  selectedTexture,
   lightingMode = "studio",
   wireframe = false,
   zoomAction,
   autoRotate = true,
 }: ModelViewerProps) {
   const controlsRef = useRef<OrbitControlsImpl>(null);
-  const [contrast, setContrast] = useState(3.0);
-  const [exposure, setExposure] = useState(2.0);
-  const [showColor, setShowColor] = useState(true);
 
-  // Handle zoom actions
+
   useEffect(() => {
-    if (zoomAction && controlsRef.current) {
-      const currentDistance = controlsRef.current.getDistance();
-      let newDistance;
+    if (!zoomAction || !controlsRef.current) return;
 
-      if (zoomAction === "in") {
-        newDistance = Math.max(currentDistance * 0.8, 2);
-      } else if (zoomAction === "out") {
-        newDistance = Math.min(currentDistance * 1.2, 10);
+    const currentDistance = controlsRef.current.getDistance();
+    const newDistance = zoomAction === "in" 
+      ? Math.max(currentDistance * 0.8, 2) 
+      : Math.min(currentDistance * 1.2, 10);
+
+    controlsRef.current.minDistance = newDistance;
+    controlsRef.current.maxDistance = newDistance;
+    controlsRef.current.update();
+
+    const timer = setTimeout(() => {
+      if (controlsRef.current) {
+        controlsRef.current.minDistance = 2;
+        controlsRef.current.maxDistance = 10;
       }
+    }, 100);
 
-      if (newDistance) {
-        controlsRef.current.minDistance = newDistance;
-        controlsRef.current.maxDistance = newDistance;
-        controlsRef.current.update();
-
-        // Reset back to normal range after a short delay
-        setTimeout(() => {
-          if (controlsRef.current) {
-            controlsRef.current.minDistance = 2;
-            controlsRef.current.maxDistance = 10;
-          }
-        }, 100);
-      }
-    }
+    return () => clearTimeout(timer);
   }, [zoomAction]);
+
+  // Don't render Canvas until we have a model URL to prevent WebGL context starvation
+  if (!modelUrl && !error) {
+    return (
+      <div className="w-full h-full relative overflow-hidden flex items-center justify-center bg-muted/30">
+        <div className="text-muted-foreground">Loading...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full h-full relative overflow-hidden">
       <Canvas
+        key="product-viewer-canvas"
         camera={{ position: [2, 1.5, 3.5], fov: 50 }}
         gl={{
-          toneMapping: 2, // ACESFilmic tone mapping
-          toneMappingExposure: exposure,
+          toneMapping: 2,
+          toneMappingExposure: 2.0,
+          preserveDrawingBuffer: false,
+          powerPreference: "high-performance",
+          antialias: true,
         }}
         className="w-full h-full"
+        frameloop="always"
       >
-        {/* Background color based on theme */}
         <color attach="background" args={["hsl(var(--muted)/0.3)"]} />
 
-        {/* Subtle grid effect */}
-        <mesh position={[0, 0, -10]} rotation={[-Math.PI / 2, 0, 0]}>
-          <planeGeometry args={[50, 50, 20, 20]} />
-          <meshBasicMaterial
-            color="hsl(var(--muted-foreground))"
-            wireframe
-            transparent
-            opacity={0.05}
-          />
-        </mesh>
-
         <Suspense fallback={null}>
-          {/* HDR Environment for PBR materials */}
           <Environment preset={lightingMode} background={false} />
+          <ambientLight intensity={1.5} />
+          <directionalLight position={[5, 5, 5]} intensity={2.4} castShadow />
+          <directionalLight position={[-5, 3, -5]} intensity={0.9} />
 
-          {/* Additional subtle lighting with contrast control */}
-          <ambientLight intensity={0.5 * contrast} />
-          <directionalLight
-            position={[5, 5, 5]}
-            intensity={0.8 * contrast}
-            castShadow
-          />
-          <directionalLight position={[-5, 3, -5]} intensity={0.3 * contrast} />
-
-          {modelUrl && (
-            <ModelLoaderWrapper
-              url={modelUrl}
-              wireframe={wireframe}
-              showColor={showColor}
-            />
-          )}
+          {modelUrl && <ModelLoaderWrapper url={modelUrl} wireframe={wireframe} />}
 
           <OrbitControls
             ref={controlsRef}

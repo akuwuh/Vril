@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -20,73 +20,45 @@ import {
   type PanelId,
 } from "@/lib/packaging-types";
 
-export default function Packaging() {
-  const [selectedColor, setSelectedColor] = useState("#60a5fa");
+const PACKAGE_TYPES: readonly { type: PackageType; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { type: "box", label: "Box", icon: Box },
+  { type: "cylinder", label: "Cylinder", icon: CylinderIcon },
+] as const;
 
-  // Advanced packaging state - using PackageModel
-  const [packageType, setPackageTypeState] = useState<PackageType>("box");
-  const [dimensions, setDimensionsState] = useState<PackageDimensions>(DEFAULT_PACKAGE_DIMENSIONS.box);
+function Packaging() {
+  const [packageType, setPackageType] = useState<PackageType>("box");
+  const [dimensions, setDimensions] = useState<PackageDimensions>(DEFAULT_PACKAGE_DIMENSIONS.box);
   const [packageModel, setPackageModel] = useState<PackageModel>(() =>
     generatePackageModel("box", DEFAULT_PACKAGE_DIMENSIONS.box)
   );
   const [selectedPanelId, setSelectedPanelId] = useState<PanelId | null>(null);
   const [activeView, setActiveView] = useState<"2d" | "3d">("3d");
-  const [panelTextures, setPanelTextures] = useState<Record<PanelId, string>>({});
+  const [panelTextures, setPanelTextures] = useState<Partial<Record<PanelId, string>>>({});
   const [showTextureNotification, setShowTextureNotification] = useState<{ panelId: PanelId; show: boolean } | null>(null);
 
-  // Update model when package type or dimensions change
   useEffect(() => {
     const newModel = generatePackageModel(packageType, dimensions);
     setPackageModel(newModel);
-    setSelectedPanelId(null); // Reset selection when model changes
-  }, [packageType, dimensions.width, dimensions.height, dimensions.depth]);
-
-
-  const packageTypes: { type: PackageType; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-    { type: "box", label: "Box", icon: Box },
-    { type: "cylinder", label: "Cylinder", icon: CylinderIcon },
-  ];
-
-  const handlePackageTypeChange = (type: PackageType) => {
-    setPackageTypeState(type);
-    setDimensionsState(DEFAULT_PACKAGE_DIMENSIONS[type]);
     setSelectedPanelId(null);
-  };
+  }, [packageType, dimensions.width, dimensions.height, dimensions.depth]);
+  const handlePackageTypeChange = useCallback((type: PackageType) => {
+    setPackageType(type);
+    setDimensions(DEFAULT_PACKAGE_DIMENSIONS[type]);
+    setSelectedPanelId(null);
+  }, []);
 
-  const handleDimensionChange = (key: keyof PackageDimensions, value: number) => {
+  const handleDimensionChange = useCallback((key: keyof PackageDimensions, value: number) => {
     const validValue = isNaN(value) || value < 0 ? 0 : value;
-    setDimensionsState((prev) => ({
-      ...prev,
-      [key]: validValue,
-    }));
-  };
+    setDimensions((prev) => ({ ...prev, [key]: validValue }));
+  }, []);
 
-  const handleDielineChange = (newDielines: typeof packageModel.dielines) => {
-    // Update model from dieline changes - this connects dieline and 3D state
-    const updatedModel = updateModelFromDielines(packageModel, newDielines);
-    setPackageModel(updatedModel);
-  };
+  const handleDielineChange = useCallback((newDielines: typeof packageModel.dielines) => {
+    setPackageModel((prev) => updateModelFromDielines(prev, newDielines));
+  }, []);
 
-  const handlePanelSelect = (panelId: PanelId | null) => {
-    console.log("[Packaging] handlePanelSelect called with:", panelId);
-    setSelectedPanelId(panelId);
-  };
-
-  const handleTextureGenerated = (panelId: PanelId, textureUrl: string) => {
-    console.log(`[Packaging] 🎨 Texture generated for ${panelId}`)
-    console.log(`[Packaging] Texture URL length: ${textureUrl.length}`)
-    console.log(`[Packaging] Texture preview: ${textureUrl.substring(0, 100)}...`)
+  const handleTextureGenerated = useCallback((panelId: PanelId, textureUrl: string) => {
+    setPanelTextures((prev) => ({ ...prev, [panelId]: textureUrl }));
     
-    setPanelTextures((prev) => {
-      const updated = {
-        ...prev,
-        [panelId]: textureUrl,
-      };
-      console.log(`[Packaging] Updated panelTextures:`, Object.keys(updated));
-      return updated;
-    });
-    
-    // Update panel state in model
     setPackageModel((prev) => ({
       ...prev,
       panelStates: {
@@ -98,20 +70,21 @@ export default function Packaging() {
       },
     }));
 
-    // Show notification
     setShowTextureNotification({ panelId, show: true });
-    setTimeout(() => {
-      setShowTextureNotification(null);
-    }, 3000);
-  };
+    setTimeout(() => setShowTextureNotification(null), 3000);
+  }, []);
+
+  const surfaceArea = useMemo(() => {
+    const { width, height, depth } = dimensions;
+    return packageType === "box"
+      ? Math.round(2 * (width * height + width * depth + height * depth))
+      : Math.round(Math.PI * width * height + 2 * Math.PI * (width / 2) ** 2);
+  }, [packageType, dimensions]);
 
   return (
     <div className="h-screen bg-background flex flex-col overflow-hidden">
       <div className="flex-1 flex overflow-hidden">
-        {/* Main Content Area */}
         <div className="flex-1 flex flex-col overflow-hidden">
-
-          {/* Canvas Area */}
           <div className="flex-1 overflow-hidden">
             {activeView === "2d" ? (
               <DielineEditor
@@ -119,7 +92,7 @@ export default function Packaging() {
                 panels={packageModel.panels}
                 selectedPanelId={selectedPanelId}
                 onDielineChange={handleDielineChange}
-                onPanelSelect={handlePanelSelect}
+                onPanelSelect={setSelectedPanelId}
                 editable={true}
               />
             ) : (
@@ -127,12 +100,11 @@ export default function Packaging() {
                 <PackageViewer3D
                   model={packageModel}
                   selectedPanelId={selectedPanelId}
-                  onPanelSelect={handlePanelSelect}
-                  color={selectedColor}
+                  onPanelSelect={setSelectedPanelId}
+                  color="#60a5fa"
                   panelTextures={panelTextures}
                 />
 
-                {/* Texture Applied Notification */}
                 {showTextureNotification?.show && (
                   <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 animate-in fade-in slide-in-from-top-2 duration-300">
                     <div className="bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-3 border-2 border-green-700">
@@ -146,19 +118,28 @@ export default function Packaging() {
                     </div>
                   </div>
                 )}
-
               </div>
             )}
           </div>
         </div>
 
-        <div className="w-[380px] border-l-2 border-black bg-card overflow-hidden flex flex-col flex-shrink-0">
-          <div className="border-b-2 border-black flex-shrink-0 px-4 py-3">
-            <h2 className="text-sm font-semibold">
-              Controls
-            </h2>
+        <div className="w-[380px] border-l-2 border-black bg-card overflow-hidden flex flex-col shrink-0">
+          <div className="border-b-2 border-black shrink-0 px-4 py-3">
+            <h2 className="text-sm font-semibold">Controls</h2>
           </div>
 
+<<<<<<< HEAD
+=======
+          <div className="border-b border-border p-4 shrink-0 bg-muted/10">
+            <h3 className="text-xs font-medium text-muted-foreground mb-2">AI Assistant</h3>
+            <AIChatPanel 
+              selectedPanelId={selectedPanelId}
+              packageModel={packageModel}
+              onTextureGenerated={handleTextureGenerated}
+            />
+          </div>
+
+>>>>>>> d1b91512f6abe717f3ad91acdd61274048a3925c
           <div className="flex-1 overflow-y-auto p-4 flex flex-col space-y-4">
             {/* AI Assistant Section */}
             <div className="space-y-2">
@@ -196,7 +177,7 @@ export default function Packaging() {
             <div className="space-y-3">
               <Label className="text-xs font-medium text-muted-foreground">Package Type</Label>
               <div className="grid grid-cols-2 gap-2">
-                {packageTypes.map(({ type, label, icon: Icon }) => (
+                {PACKAGE_TYPES.map(({ type, label, icon: Icon }) => (
                   <Button
                     key={type}
                     variant={packageType === type ? "default" : "outline"}
@@ -220,9 +201,9 @@ export default function Packaging() {
                     <Button
                       key={panel.id}
                       variant={selectedPanelId === panel.id ? "default" : "outline"}
-                      className="text-xs relative"
+                      className="text-xs"
                       size="sm"
-                      onClick={() => handlePanelSelect(panel.id === selectedPanelId ? null : panel.id)}
+                      onClick={() => setSelectedPanelId(panel.id === selectedPanelId ? null : panel.id)}
                     >
                       {panel.name}
                       {panelTextures[panel.id] && (
@@ -250,7 +231,6 @@ export default function Packaging() {
 
               {packageType === "box" ? (
                 <>
-                  {/* X (Width) - Only edits width */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <Label className="text-xs">X</Label>
@@ -277,7 +257,6 @@ export default function Packaging() {
                     />
                   </div>
 
-                  {/* Y (Height) - Only edits height */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <Label className="text-xs">Y</Label>
@@ -304,7 +283,6 @@ export default function Packaging() {
                     />
                   </div>
 
-                  {/* Z (Depth) - Only edits depth, does NOT affect X (width) or Y (height) */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <Label className="text-xs">Z</Label>
@@ -313,10 +291,7 @@ export default function Packaging() {
                         value={packageModel.dimensions.depth}
                         onChange={(e) => {
                           const val = Number(e.target.value);
-                          if (!isNaN(val) && val >= 0) {
-                            // Only update depth, X (width) and Y (height) remain unchanged
-                            handleDimensionChange("depth", val);
-                          }
+                          if (!isNaN(val) && val >= 0) handleDimensionChange("depth", val);
                         }}
                         className="w-16 h-7 text-xs"
                         min={0}
@@ -324,10 +299,7 @@ export default function Packaging() {
                     </div>
                     <Slider
                       value={[packageModel.dimensions.depth]}
-                      onValueChange={([value]) => {
-                        // Only update depth, X (width) and Y (height) remain unchanged
-                        handleDimensionChange("depth", value);
-                      }}
+                      onValueChange={([value]) => handleDimensionChange("depth", value)}
                       min={20}
                       max={300}
                       step={5}
@@ -337,7 +309,6 @@ export default function Packaging() {
                 </>
               ) : packageType === "cylinder" ? (
                 <>
-                  {/* Radius - Only edits radius (stored as width/diameter) */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <Label className="text-xs">Radius</Label>
@@ -346,10 +317,7 @@ export default function Packaging() {
                         value={packageModel.dimensions.width / 2}
                         onChange={(e) => {
                           const val = Number(e.target.value);
-                          if (!isNaN(val) && val >= 0) {
-                            // Only update width (diameter = 2 * radius), height and depth remain unchanged
-                            handleDimensionChange("width", val * 2);
-                          }
+                          if (!isNaN(val) && val >= 0) handleDimensionChange("width", val * 2);
                         }}
                         className="w-16 h-7 text-xs"
                         min={0}
@@ -357,10 +325,7 @@ export default function Packaging() {
                     </div>
                     <Slider
                       value={[packageModel.dimensions.width / 2]}
-                      onValueChange={([value]) => {
-                        // Only update width (diameter = 2 * radius), height remains unchanged
-                        handleDimensionChange("width", value * 2);
-                      }}
+                      onValueChange={([value]) => handleDimensionChange("width", value * 2)}
                       min={10}
                       max={150}
                       step={5}
@@ -368,7 +333,6 @@ export default function Packaging() {
                     />
                   </div>
 
-                  {/* Height - Only edits height */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <Label className="text-xs">Height</Label>
@@ -377,10 +341,7 @@ export default function Packaging() {
                         value={packageModel.dimensions.height}
                         onChange={(e) => {
                           const val = Number(e.target.value);
-                          if (!isNaN(val) && val >= 0) {
-                            // Only update height, radius (width) remains unchanged
-                            handleDimensionChange("height", val);
-                          }
+                          if (!isNaN(val) && val >= 0) handleDimensionChange("height", val);
                         }}
                         className="w-16 h-7 text-xs"
                         min={0}
@@ -388,10 +349,7 @@ export default function Packaging() {
                     </div>
                     <Slider
                       value={[packageModel.dimensions.height]}
-                      onValueChange={([value]) => {
-                        // Only update height, radius (width) remains unchanged
-                        handleDimensionChange("height", value);
-                      }}
+                      onValueChange={([value]) => handleDimensionChange("height", value)}
                       min={20}
                       max={400}
                       step={5}
@@ -422,33 +380,10 @@ export default function Packaging() {
                 </div>
                 <div className="flex justify-between text-muted-foreground">
                   <span>Surface Area:</span>
-                  <span className="font-medium text-foreground">
-                    {packageType === "box"
-                      ? Math.round(
-                          2 *
-                            (dimensions.width * dimensions.height +
-                              dimensions.width * dimensions.depth +
-                              dimensions.height * dimensions.depth),
-                        )
-                      : Math.round(
-                          Math.PI * dimensions.width * dimensions.height +
-                            2 * Math.PI * (dimensions.width / 2) ** 2,
-                        )}{" "}
-                    mm²
-                  </span>
+                  <span className="font-medium text-foreground">{surfaceArea} mm²</span>
                 </div>
               </div>
             </Card>
-
-            {/* Quick Actions */}
-            <div className="space-y-2">
-              <Button variant="outline" className="w-full justify-start bg-transparent" size="sm">
-                Reset to Default
-              </Button>
-              <Button variant="outline" className="w-full justify-start bg-transparent" size="sm">
-                Import Custom Dieline
-              </Button>
-            </div>
 
           </div>
         </div>
@@ -456,3 +391,5 @@ export default function Packaging() {
     </div>
   );
 }
+
+export default Packaging;

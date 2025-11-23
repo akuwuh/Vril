@@ -15,107 +15,83 @@ import { AIChatPanel } from "@/components/AIChatPanel";
 import { useLoading } from "@/providers/LoadingProvider";
 import { getProductState } from "@/lib/product-api";
 import { ProductState } from "@/lib/product-types";
-import { getCachedModelUrl, clearCachedModel } from "@/lib/model-cache";
+import { getCachedModelUrl } from "@/lib/model-cache";
 
-export default function ProductPage() {
+function ProductPage() {
   const { stopLoading } = useLoading();
   const [productState, setProductState] = useState<ProductState | null>(null);
   const [currentModelUrl, setCurrentModelUrl] = useState<string>();
-  const latestIterationIdRef = useRef<string | null>(null);
-  const [selectedColor, setSelectedColor] = useState("#60a5fa");
-  const [selectedTexture, setSelectedTexture] = useState("matte");
+  const [modelKey, setModelKey] = useState<string>("");
   const [lightingMode, setLightingMode] = useState<"studio" | "sunset" | "warehouse" | "forest">("studio");
   const [displayMode, setDisplayMode] = useState<"solid" | "wireframe">("solid");
   const [zoomAction, setZoomAction] = useState<"in" | "out" | null>(null);
   const [autoRotate, setAutoRotate] = useState(true);
   const [isEditInProgress, setIsEditInProgress] = useState(false);
+  
+  const latestIterationIdRef = useRef<string | null>(null);
 
   const applyModelUrl = useCallback((url?: string, iterationId?: string) => {
-    if (!url) {
-      console.log("[Product] applyModelUrl called with no URL, skipping");
-      return;
-    }
-    console.log(`[Product] applyModelUrl: ${url.substring(0, 60)}... for iteration: ${iterationId}`);
+    if (!url) return;
+    console.log(`[ProductPage] 🔄 Applying new model: ${iterationId}`);
     setCurrentModelUrl(url);
     if (iterationId) {
       latestIterationIdRef.current = iterationId;
+      setModelKey(iterationId); // Force clean remount with new key
     }
   }, []);
-
 
   const hydrateProductState = useCallback(async () => {
     try {
       const state = await getProductState();
-      setProductState(state);
       const latestIteration = state.iterations.at(-1);
+      const iterationId = latestIteration?.id;
+      
+      if (iterationId && latestIterationIdRef.current === iterationId) {
+        setProductState(state);
+        return;
+      }
+      
+      setProductState(state);
       const remoteModelUrl = state.trellis_output?.model_file;
-      if (latestIteration && remoteModelUrl) {
-        const iterationId = latestIteration.id;
-        // Skip if we already have this exact iteration loaded
-        if (latestIterationIdRef.current === iterationId && currentModelUrl) {
-          console.log(`[Product] Skipping hydration - already showing iteration ${iterationId}`);
-          return;
-        }
-        console.log(`[Product] Loading iteration ${iterationId}, current: ${latestIterationIdRef.current}`);
+      
+      if (latestIteration && remoteModelUrl && iterationId) {
         try {
           const cachedUrl = await getCachedModelUrl(iterationId, remoteModelUrl);
-          console.log(`[Product] Got blob URL: ${cachedUrl.substring(0, 60)}...`);
           applyModelUrl(cachedUrl, iterationId);
         } catch (cacheError) {
-          console.error("Model cache fetch failed, using remote URL:", cacheError);
+          console.error("Model cache failed:", cacheError);
           applyModelUrl(remoteModelUrl, iterationId);
         }
       }
     } catch (error) {
       console.error("Failed to load product state:", error);
     }
-  }, [applyModelUrl, currentModelUrl]);
+  }, [applyModelUrl]);
 
   useEffect(() => {
-    let isMounted = true;
-    hydrateProductState().finally(() => {
-      if (isMounted) {
-        stopLoading();
-      }
-    });
-    return () => {
-      isMounted = false;
-    };
-  }, [hydrateProductState, stopLoading]);
+    hydrateProductState().finally(() => stopLoading());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Reset zoom action after it's been processed
   useEffect(() => {
-    if (zoomAction) {
-      const timer = setTimeout(() => setZoomAction(null), 200);
-      return () => clearTimeout(timer);
-    }
+    if (!zoomAction) return;
+    const timer = setTimeout(() => setZoomAction(null), 200);
+    return () => clearTimeout(timer);
   }, [zoomAction]);
 
-  const colors = [
-    { name: "Blue", value: "#60a5fa" },
-    { name: "White", value: "#ffffff" },
-    { name: "Black", value: "#000000" },
-    { name: "Red", value: "#ef4444" },
-    { name: "Green", value: "#22c55e" },
-    { name: "Yellow", value: "#eab308" },
-  ];
-
   return (
-    <div className="h-screen bg-background flex flex-col overflow-hidden relative">
+    <div className="h-screen bg-background flex flex-col overflow-hidden">
       <div className="flex-1 flex overflow-hidden">
-        {/* 3D Viewer */}
         <div className="flex-1 relative bg-muted/30">
           <ModelViewer
+            key={modelKey}
             modelUrl={currentModelUrl}
-            selectedColor={selectedColor}
-            selectedTexture={selectedTexture}
             lightingMode={lightingMode}
             wireframe={displayMode === "wireframe"}
             zoomAction={zoomAction}
             autoRotate={autoRotate}
           />
 
-          {/* Floating Controls */}
           <div className="absolute top-4 right-4 flex flex-col gap-2">
             <Button size="icon" variant="secondary" onClick={() => setZoomAction("in")}>
               <ZoomIn className="w-4 h-4" />
@@ -182,3 +158,5 @@ export default function ProductPage() {
     </div>
   );
 }
+
+export default ProductPage;
