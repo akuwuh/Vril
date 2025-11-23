@@ -49,7 +49,7 @@ class ProductState(BaseModel):
     status: str = "idle"
     message: Optional[str] = None
     in_progress: bool = False
-    generation_start_time: Optional[datetime] = None
+    generation_started_at: Optional[datetime] = None  # For timer continuity across reloads
     image_count: int = 3
     images: List[str] = Field(default_factory=list)
     trellis_output: Optional[TrellisArtifacts] = None
@@ -74,6 +74,7 @@ class ProductState(BaseModel):
         self.status = "complete"
         self.message = message
         self.in_progress = False
+        self.generation_started_at = None  # Clear timer on completion
         self.updated_at = _utcnow()
 
     def mark_progress(self, status: str, message: Optional[str] = None) -> None:

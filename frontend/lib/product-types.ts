@@ -25,6 +25,7 @@ export interface ProductState {
   status: string;
   message?: string;
   in_progress: boolean;
+  generation_started_at?: string;
   image_count: number;
   images: string[];
   trellis_output?: TrellisArtifacts;

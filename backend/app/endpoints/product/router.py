@@ -12,6 +12,7 @@ from app.models.product_state import (
     get_product_status,
     save_product_state,
     save_product_status,
+    _utcnow,
 )
 from app.services.product_pipeline import product_pipeline_service
 
@@ -54,6 +55,7 @@ async def start_create(request: ProductCreateRequest):
     state.status = "pending"
     state.message = "Preparing product generation"
     state.in_progress = True
+    state.generation_started_at = _utcnow()  # Track start time for frontend timer
     state.image_count = request.image_count
     state.images = []
     state.trellis_output = None
@@ -84,6 +86,7 @@ async def start_edit(request: ProductEditRequest):
     state.status = "pending"
     state.message = "Preparing edit request"
     state.in_progress = True
+    state.generation_started_at = _utcnow()  # Track start time for frontend timer
     save_product_state(state)
 
     payload = ProductStatus(status="pending", progress=0, message="Preparing edit request")

@@ -74,20 +74,27 @@ function ProductAIChatPanel({
     setIsMounted(true);
   }, []);
 
-  // Track elapsed time during generation
+  // Track elapsed time during generation - use backend's generation_started_at if available
   useEffect(() => {
     if (!isEditInProgress) {
       setElapsedTime(0);
       return;
     }
 
-    const startTime = Date.now();
+    // Use backend start time if available, otherwise use current time
+    const startTime = productState?.generation_started_at 
+      ? new Date(productState.generation_started_at).getTime()
+      : Date.now();
+    
+    // Set initial elapsed time immediately
+    setElapsedTime(Math.floor((Date.now() - startTime) / 1000));
+
     const interval = setInterval(() => {
       setElapsedTime(Math.floor((Date.now() - startTime) / 1000));
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isEditInProgress]);
+  }, [isEditInProgress, productState?.generation_started_at]);
 
   // Poll backend status while edit is running
   useEffect(() => {

@@ -47,25 +47,42 @@ function ProductPage() {
       const iterationId = latestIteration?.id;
       const remoteModelUrl = state.trellis_output?.model_file;
       
+      console.log("[ProductPage] 🔍 Hydrating state:", {
+        in_progress: state.in_progress,
+        has_model: !!remoteModelUrl,
+        iteration_id: iterationId,
+        current_loaded: latestIterationIdRef.current
+      });
+      
       // Always update product state
       setProductState(state);
       
-      // Check if state shows in_progress - if so, resume polling FIRST
+      // Check if state shows in_progress - if so, resume polling
       if (state.in_progress) {
         console.log("[ProductPage] 🔄 Generation in progress - resuming polling");
         setIsEditInProgress(true);
-        // Don't load model yet - wait for generation to complete
+        // Still try to load previous model if we don't have one loaded
+        if (!currentModelUrl && remoteModelUrl && iterationId) {
+          console.log("[ProductPage] 📦 Loading previous model during generation");
+          try {
+            const cachedUrl = await getCachedModelUrl(iterationId, remoteModelUrl);
+            applyModelUrl(cachedUrl, iterationId);
+          } catch (cacheError) {
+            console.error("Model cache failed:", cacheError);
+            applyModelUrl(remoteModelUrl, iterationId);
+          }
+        }
         return;
       }
       
       // Only skip model loading if we already have this exact iteration AND a model URL loaded
       if (iterationId && latestIterationIdRef.current === iterationId && currentModelUrl) {
-        console.log("[ProductPage] ♻️ Same iteration, skipping model reload");
+        console.log("[ProductPage] ♻️ Same iteration already loaded, skipping");
         return;
       }
       
       // Load the model
-      if (latestIteration && remoteModelUrl && iterationId) {
+      if (remoteModelUrl && iterationId) {
         console.log("[ProductPage] 📦 Loading model:", iterationId);
         try {
           const cachedUrl = await getCachedModelUrl(iterationId, remoteModelUrl);
@@ -74,6 +91,8 @@ function ProductPage() {
           console.error("Model cache failed:", cacheError);
           applyModelUrl(remoteModelUrl, iterationId);
         }
+      } else {
+        console.log("[ProductPage] ⚠️ No model to load:", { remoteModelUrl, iterationId });
       }
     } catch (error) {
       console.error("Failed to load product state:", error);

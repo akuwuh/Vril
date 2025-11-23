@@ -60,55 +60,9 @@ function ModelLoader({
 }
 
 function ModelLoaderWrapper({ url, wireframe }: { url: string; wireframe: boolean }) {
-  const [opacity, setOpacity] = useState(0);
-  const fadeFrameRef = useRef<number | null>(null);
-  const hasStartedRef = useRef(false);
-  const currentUrlRef = useRef(url);
-
-  // Reset animation state when URL changes
-  useEffect(() => {
-    if (currentUrlRef.current !== url) {
-      currentUrlRef.current = url;
-      hasStartedRef.current = false;
-      setOpacity(0);
-      if (fadeFrameRef.current) {
-        cancelAnimationFrame(fadeFrameRef.current);
-        fadeFrameRef.current = null;
-      }
-    }
-  }, [url]);
-
-  const startFadeIn = useCallback(() => {
-    if (hasStartedRef.current) return;
-    hasStartedRef.current = true;
-    
-    const duration = 350;
-    const start = performance.now();
-
-    const animate = (now: number) => {
-      const progress = Math.min((now - start) / duration, 1);
-      setOpacity(progress);
-      if (progress < 1) {
-        fadeFrameRef.current = requestAnimationFrame(animate);
-      }
-    };
-
-    fadeFrameRef.current = requestAnimationFrame(animate);
-  }, []);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (fadeFrameRef.current) {
-        cancelAnimationFrame(fadeFrameRef.current);
-        fadeFrameRef.current = null;
-      }
-    };
-  }, []);
-
   return (
     <Suspense fallback={null}>
-      <ModelLoader url={url} wireframe={wireframe} opacity={opacity} onLoad={startFadeIn} />
+      <ModelLoader url={url} wireframe={wireframe} opacity={1} onLoad={() => {}} />
     </Suspense>
   );
 }
