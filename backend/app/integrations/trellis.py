@@ -36,7 +36,8 @@ class TrellisService:
         ss_sampling_steps: int = 16,
         ss_guidance_strength: float = 7.5,
         slat_sampling_steps: int = 16,
-        slat_guidance_strength: float = 3.2
+        slat_guidance_strength: float = 3.2,
+        progress_callback = None,
     ) -> TrellisOutput:
         """
         Generate a 3D asset from input images using Trellis via fal.ai.
@@ -73,6 +74,9 @@ class TrellisService:
             logger.info(f"  slat_sampling_steps: {slat_sampling_steps}")
             logger.info(f"  slat_guidance_strength: {slat_guidance_strength}")
             logger.info("-" * 80)
+            
+            # Store callback for use in _handle_queue_update
+            self._progress_callback = progress_callback
             
             # Submit request and get result using fal_client.subscribe
             # This handles submission, polling, and result retrieval automatically
@@ -123,15 +127,37 @@ class TrellisService:
     
     def _handle_queue_update(self, update):
         """Handle queue status updates and log progress."""
+        status_msg = None
+        progress_val = None
+        
         if hasattr(update, 'status'):
             logger.info(f"Queue status: {update.status}")
+            status_msg = update.status
+            
+            # Map Fal.ai statuses to progress percentages
+            if update.status == 'IN_QUEUE':
+                progress_val = 50
+            elif update.status == 'IN_PROGRESS':
+                progress_val = 70
+                
         if hasattr(update, 'logs') and update.logs:
             for log in update.logs:
                 if hasattr(log, 'message'):
                     logger.info(f"  Progress: {log.message}")
+                    status_msg = log.message
                 elif isinstance(log, dict) and 'message' in log:
                     logger.info(f"  Progress: {log['message']}")
+                    status_msg = log['message']
                 elif isinstance(log, str):
                     logger.info(f"  Progress: {log}")
+                    status_msg = log
+        
+        # Call the progress callback if provided
+        if self._progress_callback and status_msg:
+            self._progress_callback(
+                status="generating_model",
+                progress=progress_val or 60,
+                message=f"Trellis: {status_msg}"
+            )
 
 trellis_service = TrellisService()

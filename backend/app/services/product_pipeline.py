@@ -133,9 +133,21 @@ class ProductPipelineService:
 
     async def _generate_trellis_model(self, images: List[str]) -> Dict[str, Any]:
         """Call Trellis via the existing integration in a background thread."""
+        
+        def progress_callback(status: str, progress: int, message: str):
+            """Update ProductStatus with Trellis progress in real-time."""
+            self._update_status(
+                ProductStatus(
+                    status=status,
+                    progress=progress,
+                    message=message
+                )
+            )
+        
         return await asyncio.to_thread(
             trellis_service.generate_3d_asset,
             images=images,
+            progress_callback=progress_callback,
         )
 
     def _determine_preview_image(self, state: ProductState) -> Optional[str]:
