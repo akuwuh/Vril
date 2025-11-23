@@ -14,6 +14,7 @@ export interface ProductIteration {
   trellis_output?: TrellisArtifacts;
   created_at: string;
   note?: string;
+  duration_seconds?: number;
 }
 
 export interface ProductState {

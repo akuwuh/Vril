@@ -17,6 +17,7 @@ interface ModelViewerProps {
   wireframe?: boolean;
   zoomAction?: "in" | "out" | null;
   autoRotate?: boolean;
+  placeholderImage?: string;
 }
 
 function CubeModel({
@@ -134,17 +135,29 @@ function LoadingPlaceholder() {
   return null;
 }
 
-function LoadingSkeleton() {
+function LoadingSkeleton({ placeholderImage }: { placeholderImage?: string }) {
   return (
     <div className="absolute inset-0 flex items-center justify-center bg-gray-800">
-      <div className="text-center">
-        <div className="mb-4">
-          <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+      <div className="text-center space-y-4">
+        {placeholderImage ? (
+          <div className="relative mx-auto w-40 h-40 rounded-xl overflow-hidden border border-white/20 shadow-lg">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={placeholderImage}
+              alt="Preview placeholder"
+              className="w-full h-full object-cover"
+            />
+            <div className="absolute inset-0 bg-linear-to-b from-black/10 to-black/40" />
+          </div>
+        ) : (
+          <div className="mb-2">
+            <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+          </div>
+        )}
+        <div>
+          <p className="text-blue-400 text-lg font-semibold mb-1">Loading 3D Model</p>
+          <p className="text-gray-400 text-sm">This may take a few moments...</p>
         </div>
-        <p className="text-blue-400 text-lg font-semibold mb-2">
-          Loading 3D Model
-        </p>
-        <p className="text-gray-400 text-sm">This may take a few moments...</p>
       </div>
     </div>
   );
@@ -187,6 +200,7 @@ export default function ModelViewer({
   wireframe = false,
   zoomAction,
   autoRotate = true,
+  placeholderImage,
 }: ModelViewerProps) {
   const controlsRef = useRef<OrbitControlsImpl>(null);
   const [contrast, setContrast] = useState(3.0);
@@ -234,7 +248,7 @@ export default function ModelViewer({
   // Determine content to render
   let content;
   if (isLoading || (modelUrl && isModelLoading)) {
-    content = <LoadingSkeleton />;
+    content = <LoadingSkeleton placeholderImage={placeholderImage} />;
   } else if (error || modelLoadError) {
     const errorMessage = modelLoadError || error || 'Failed to load model';
     content = <ErrorDisplay message={errorMessage} />;

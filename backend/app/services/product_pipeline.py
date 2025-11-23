@@ -55,6 +55,7 @@ class ProductPipelineService:
         await self._execute_flow(state, instruction, mode="edit")
 
     async def _execute_flow(self, state: ProductState, instruction: str, mode: str) -> None:
+        flow_started_at = time.perf_counter()
         try:
             state.in_progress = True
             state.mark_progress("generating_images", "Generating concept images")
@@ -95,8 +96,13 @@ class ProductPipelineService:
 
             trellis_output = await self._generate_trellis_model(images)
             artifacts = TrellisArtifacts.model_validate(trellis_output)
+            duration_seconds = round(time.perf_counter() - flow_started_at, 2)
             iteration = ProductIteration(
-                type=mode, prompt=instruction, images=images, trellis_output=artifacts
+                type=mode,
+                prompt=instruction,
+                images=images,
+                trellis_output=artifacts,
+                duration_seconds=duration_seconds,
             )
             state.trellis_output = artifacts
             state.iterations.append(iteration)

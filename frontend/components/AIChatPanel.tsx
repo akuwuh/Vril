@@ -90,6 +90,23 @@ export function AIChatPanel({
   const iterations = useMemo(() => productState?.iterations ?? [], [productState?.iterations]);
   const canEdit = Boolean(productState?.images?.length);
 
+  const formatDuration = (value?: number) => {
+    if (value === undefined || value === null) {
+      return null;
+    }
+    if (value < 60) {
+      return `${Math.max(1, Math.round(value))}s`;
+    }
+    const minutes = Math.floor(value / 60);
+    const seconds = Math.round(value % 60);
+    if (minutes >= 60) {
+      const hours = Math.floor(minutes / 60);
+      const remMinutes = minutes % 60;
+      return `${hours}h ${remMinutes}m`;
+    }
+    return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
+  };
+
   const handleSubmit = async () => {
     if (!prompt.trim() || !canEdit) return;
 
@@ -207,22 +224,29 @@ export function AIChatPanel({
                           {iteration.type} • {new Date(iteration.created_at).toLocaleTimeString()}
                         </p>
                       </div>
-                      {!isCurrent && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 border border-black rounded-full"
-                          disabled={isEditInProgress || rewindTarget === actualIndex}
-                          onClick={() => handleRewind(actualIndex)}
-                          title="Rewind to this version"
-                        >
-                          {rewindTarget === actualIndex ? (
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                          ) : (
-                            <RotateCcw className="w-3 h-3" />
-                          )}
-                        </Button>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {formatDuration(iteration.duration_seconds) && (
+                          <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                            {formatDuration(iteration.duration_seconds)}
+                          </span>
+                        )}
+                        {!isCurrent && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 border border-black rounded-full"
+                            disabled={isEditInProgress || rewindTarget === actualIndex}
+                            onClick={() => handleRewind(actualIndex)}
+                            title="Rewind to this version"
+                          >
+                            {rewindTarget === actualIndex ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <RotateCcw className="w-3 h-3" />
+                            )}
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );

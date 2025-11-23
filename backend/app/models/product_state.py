@@ -36,6 +36,7 @@ class ProductIteration(BaseModel):
     trellis_output: Optional[TrellisArtifacts] = None
     created_at: datetime = Field(default_factory=_utcnow)
     note: Optional[str] = None
+    duration_seconds: Optional[float] = None
 
 
 class ProductState(BaseModel):
