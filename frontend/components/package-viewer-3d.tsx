@@ -635,7 +635,7 @@ export const PackageViewer3D = React.forwardRef<PackageViewer3DRef, PackageViewe
           powerPreference: "high-performance",
           antialias: true,
         }}
-        frameloop="demand" // Only render when needed, not constantly
+        frameloop="always" // Always render for auto-rotation
         onCreated={({ gl }) => {
           canvasRef.current = gl.domElement;
         }}
@@ -676,9 +676,7 @@ export const PackageViewer3D = React.forwardRef<PackageViewer3DRef, PackageViewe
 
       {props.model.dielines && !props.hideDielineHud && (
         <MiniDielineHud 
-          dielines={props.model.dielines} 
-          panels={props.model.panels}
-          panelTextures={props.panelTextures}
+          dielines={props.model.dielines}
         />
       )}
     </div>

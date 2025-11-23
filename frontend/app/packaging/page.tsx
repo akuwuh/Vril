@@ -7,9 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { DielineEditor } from "@/components/dieline-editor";
-import { PackageViewer3D, PackageViewer3DRef } from "@/components/package-viewer-3d";
+import { PackageViewer3D } from "@/components/package-viewer-3d";
 import { AIChatPanel } from "@/components/AIChatPanel";
-import { CylinderIcon, Box, CheckCircle2, MessageSquare, Pencil, Download, RotateCcw } from "lucide-react";
+import { CylinderIcon, Box, CheckCircle2, MessageSquare, Pencil, RotateCcw } from "lucide-react";
 import { useLoading } from "@/providers/LoadingProvider";
 import { updatePackagingDimensions, getPackagingState, getPackagingStatus, resetCurrentShape } from "@/lib/packaging-api";
 import { getCachedTextureUrl } from "@/lib/texture-cache";
@@ -285,9 +285,6 @@ function Packaging() {
   const [displayMode, setDisplayMode] = useState<"solid" | "wireframe">("solid");
   const [zoomAction, setZoomAction] = useState<"in" | "out" | null>(null);
   const [autoRotate, setAutoRotate] = useState(true);
-  const [isDownloading, setIsDownloading] = useState(false);
-  
-  const viewerRef = useRef<PackageViewer3DRef>(null);
 
   /**
    * Hydrate state from backend on mount/reload.
@@ -607,42 +604,6 @@ function Packaging() {
       : Math.round(Math.PI * (width / 2) ** 2 * height);
   }, [packageType, dimensions]);
 
-  const handleDownloadScreenshot = useCallback(async () => {
-    if (!viewerRef.current || isDownloading) return;
-    
-    try {
-      setIsDownloading(true);
-      
-      // Temporarily disable auto-rotate and set camera to nice angle
-      const wasAutoRotating = autoRotate;
-      setAutoRotate(false);
-      
-      // Wait a bit for the rotation to stop
-      await new Promise(resolve => setTimeout(resolve, 300));
-      
-      // Capture screenshot
-      const dataUrl = await viewerRef.current.captureScreenshot();
-      
-      // Create download link
-      const link = document.createElement("a");
-      link.href = dataUrl;
-      link.download = `package-${packageType}-${Date.now()}.jpg`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-      // Restore auto-rotate
-      if (wasAutoRotating) {
-        setAutoRotate(true);
-      }
-    } catch (error) {
-      console.error("Failed to capture screenshot:", error);
-      alert("Failed to capture screenshot. Please try again.");
-    } finally {
-      setIsDownloading(false);
-    }
-  }, [autoRotate, packageType, isDownloading]);
-
   // Show loading state until hydrated
   if (!isHydrated || !packageModel) {
     return (
@@ -674,7 +635,6 @@ function Packaging() {
             ) : (
               <div className="h-full bg-muted/30 relative">
                 <PackageViewer3D
-                  ref={viewerRef}
                   model={packageModel}
                   selectedPanelId={selectedPanelId}
                   onPanelSelect={setSelectedPanelId}
@@ -685,28 +645,6 @@ function Packaging() {
                   zoomAction={zoomAction}
                   autoRotate={autoRotate}
                 />
-
-                {/* Download Screenshot Button */}
-                <div className="absolute top-4 right-4 z-40">
-                  <Button
-                    onClick={handleDownloadScreenshot}
-                    disabled={isDownloading}
-                    size="sm"
-                    className="bg-black text-white hover:bg-gray-800 shadow-lg"
-                  >
-                    {isDownloading ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-                        Capturing...
-                      </>
-                    ) : (
-                      <>
-                        <Download className="w-4 h-4 mr-2" />
-                        Screenshot
-                      </>
-                    )}
-                  </Button>
-                </div>
 
                 {isGenerating && packagingState && (
                   <div className="absolute top-4 left-4 z-40 bg-black/80 text-white px-4 py-3 rounded-lg shadow-lg">
