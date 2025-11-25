@@ -13,6 +13,7 @@ from app.models.product_state import (
     get_product_status,
     save_product_state,
     save_product_status,
+    clear_product_state,
     _utcnow,
 )
 from app.services.product_pipeline import product_pipeline_service
@@ -278,5 +279,19 @@ async def download_product_export(format: str):
         media_type=media_type_map.get(format, "application/octet-stream"),
         filename=f"product.{format if format != 'blend' else 'obj'}",
     )
+
+
+@router.post("/clear")
+async def clear_state():
+    """Reset product state to defaults."""
+    logger.info("[product-router] Clearing product state")
+    state = clear_product_state()
+    status = ProductStatus(status="idle", message="Product state cleared")
+    save_product_status(status)
+    logger.info("[product-router] Product state cleared successfully")
+    return {
+        "message": "Product state cleared",
+        "state": state.as_json(),
+    }
 
 

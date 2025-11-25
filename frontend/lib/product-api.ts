@@ -90,3 +90,10 @@ export async function downloadProductExport(format: "blend" | "stl" | "jpg"): Pr
   return response.blob();
 }
 
+export async function clearProductState(): Promise<{ message: string; state: ProductState }> {
+  const response = await fetch(`${API_BASE}/product/clear`, {
+    method: "POST",
+  });
+  return handleResponse(response);
+}
+
