@@ -82,20 +82,34 @@ function ProductPage() {
         return;
       }
       
-      // Only skip model loading if we already have this exact iteration AND a model URL loaded
-      if (iterationId && latestIterationIdRef.current === iterationId && currentModelUrl) {
+      // Check if this is a new iteration - if so, ALWAYS reload even if we have a model
+      const isNewIteration = iterationId && latestIterationIdRef.current !== iterationId;
+      const alreadyLoaded = iterationId && latestIterationIdRef.current === iterationId && currentModelUrl;
+      
+      console.log("[ProductPage] 🔍 Model loading decision:", {
+        iterationId,
+        currentIteration: latestIterationIdRef.current,
+        isNewIteration,
+        alreadyLoaded,
+        hasCurrentModel: !!currentModelUrl
+      });
+      
+      // Only skip if we already have this exact iteration loaded
+      if (alreadyLoaded && !isNewIteration) {
         console.log("[ProductPage] ♻️ Same iteration already loaded, skipping");
         return;
       }
       
-      // Load the model
+      // Load the model (new iteration or first load)
       if (remoteModelUrl && iterationId) {
-        console.log("[ProductPage] 📦 Loading model:", iterationId);
+        console.log("[ProductPage] 📦 Loading model:", { iterationId, isNewIteration, url: remoteModelUrl.substring(0, 50) });
         try {
           const cachedUrl = await getCachedModelUrl(iterationId, remoteModelUrl);
+          console.log("[ProductPage] ✅ Cached URL retrieved, applying model");
           applyModelUrl(cachedUrl, iterationId);
         } catch (cacheError) {
           console.error("Model cache failed:", cacheError);
+          console.log("[ProductPage] ⚠️ Falling back to direct URL");
           applyModelUrl(remoteModelUrl, iterationId);
         }
       } else {
