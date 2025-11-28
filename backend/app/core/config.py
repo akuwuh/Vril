@@ -17,6 +17,15 @@ class Settings(BaseSettings):
     
     # Artifact Storage
     SAVE_ARTIFACTS_LOCALLY: bool = False  # Save to filesystem for testing/debugging
+    
+    # Trellis
+    TRELLIS_ENABLE_MULTI_IMAGE: bool = False
+    TRELLIS_MULTIIMAGE_ALGO: str = "stochastic"  # stochastic | multidiffusion
+    
+    # Demo Mock Mode - Simulate generation with hardcoded timing (no real API calls)
+    DEMO_MOCK_MODE: bool = False  # Enable for presentations - uses pre-seeded data with fake loading
+    DEMO_CREATE_DELAY: int = 8    # Seconds to simulate create generation
+    DEMO_EDIT_DELAY: int = 6      # Seconds to simulate edit generation
 
     class Config:
         env_file = ".env"

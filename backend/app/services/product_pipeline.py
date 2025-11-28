@@ -60,6 +60,106 @@ class ProductPipelineService:
         state.latest_instruction = instruction
         await self._execute_flow(state, instruction, mode="edit")
 
+    async def run_trellis_only(
+        self,
+        prompt: str,
+        images: List[str],
+        mode: str = "create",
+    ) -> None:
+        """
+        Run ONLY the Trellis 3D generation with pre-provided images.
+        
+        Use this when you've pre-generated images externally (e.g., AI Studio)
+        and just want to convert them to 3D models.
+        
+        Args:
+            prompt: Description of the product (for state tracking)
+            images: List of image URLs or base64 data URLs
+            mode: "create" or "edit" - affects state tracking
+        """
+        logger.info(f"[product-pipeline] Starting Trellis-only flow with {len(images)} pre-generated images")
+        flow_started_at = time.perf_counter()
+        
+        state = get_product_state()
+        
+        try:
+            # Set up state
+            if mode == "create":
+                state.prompt = prompt
+                state.iterations = []
+            else:
+                state.latest_instruction = prompt
+            
+            state.mode = mode
+            state.in_progress = True
+            state.images = images  # Use pre-provided images
+            state.mark_progress("generating_model", "Generating 3D model with Trellis (using pre-generated images)")
+            save_product_state(state)
+            
+            self._update_status(
+                ProductStatus(
+                    status="generating_model",
+                    progress=30,
+                    message="Generating 3D model with Trellis...",
+                )
+            )
+            
+            # Save pre-generated images to artifacts if enabled
+            if settings.SAVE_ARTIFACTS_LOCALLY:
+                self._save_gemini_images(images, f"{mode}_pregenerated")
+            
+            # Run Trellis
+            trellis_output = await self._generate_trellis_model(images)
+            artifacts = TrellisArtifacts.model_validate(trellis_output)
+            
+            duration_seconds = round(time.perf_counter() - flow_started_at, 2)
+            iteration_id = f"iter_{int(time.time() * 1000)}"
+            iteration = ProductIteration(
+                id=iteration_id,
+                type=mode,
+                prompt=prompt,
+                images=images,
+                trellis_output=artifacts,
+                duration_seconds=duration_seconds,
+                note="Trellis-only (pre-generated images)",
+            )
+            
+            state.trellis_output = artifacts
+            state.iterations.append(iteration)
+            state.mark_complete("3D asset generated from pre-generated images")
+            save_product_state(state)
+            
+            # Save artifacts
+            if settings.SAVE_ARTIFACTS_LOCALLY:
+                self._save_trellis_model(artifacts, mode)
+                self._save_product_state(state, mode)
+            
+            preview = self._determine_preview_image(state)
+            self._update_status(
+                ProductStatus(
+                    status="complete",
+                    progress=100,
+                    message="3D asset generated",
+                    model_file=artifacts.model_file,
+                    preview_image=preview,
+                )
+            )
+            
+            logger.info(f"[product-pipeline] Trellis-only flow complete in {duration_seconds}s")
+            
+        except Exception as exc:
+            logger.exception("Trellis-only pipeline failed: %s", exc)
+            state.mark_error(str(exc))
+            save_product_state(state)
+            self._update_status(
+                ProductStatus(
+                    status="error",
+                    progress=0,
+                    message=str(exc),
+                    error=str(exc),
+                )
+            )
+
     async def _execute_flow(self, state: ProductState, instruction: str, mode: str) -> None:
         flow_started_at = time.perf_counter()
         try:
@@ -147,7 +247,12 @@ class ProductPipelineService:
                 )
             )
 
-    async def _generate_trellis_model(self, images: List[str]) -> Dict[str, Any]:
+    async def _generate_trellis_model(
+        self,
+        images: List[str],
+        multi_image: Optional[bool] = None,
+        multi_image_algo: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Call Trellis via the existing integration in a background thread."""
         if not TRELLIS_AVAILABLE or not trellis_service:
             raise RuntimeError("Trellis service is not available. Please install fal_client dependency.")
@@ -162,10 +267,19 @@ class ProductPipelineService:
                 )
             )
         
+        use_multi = (
+            multi_image
+            if multi_image is not None
+            else (settings.TRELLIS_ENABLE_MULTI_IMAGE and len(images) > 1)
+        )
+        algo = multi_image_algo or settings.TRELLIS_MULTIIMAGE_ALGO
+
         return await asyncio.to_thread(
             trellis_service.generate_3d_asset,
             images=images,
             progress_callback=progress_callback,
+            use_multi_image=use_multi,
+            multiimage_algo=algo,
         )
 
     def _determine_preview_image(self, state: ProductState) -> Optional[str]:

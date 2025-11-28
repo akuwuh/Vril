@@ -66,8 +66,8 @@ export async function clearCachedModel(iterationId: string) {
   blobUrlCache.forEach((blobUrl, key) => {
     if (key.startsWith(`model_glb_${iterationId}_`)) {
       if (blobUrl.startsWith("blob:")) {
-        URL.revokeObjectURL(blobUrl);
-      }
+    URL.revokeObjectURL(blobUrl);
+  }
       keysToDelete.push(key);
     }
   });

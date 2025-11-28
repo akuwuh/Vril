@@ -39,6 +39,14 @@ except ImportError as e:
 app.include_router(packaging_router)
 logging.info("Packaging router loaded")
 
+# Demo router for seeding pre-generated state
+try:
+    from app.endpoints.demo.router import router as demo_router
+    app.include_router(demo_router)
+    logging.info("Demo router loaded")
+except ImportError as e:
+    logging.warning(f"Demo router not available: {e}")
+
 @app.get("/")
 def read_root():
     return {"message": "Welcome to Trellis 3D Generation API"}

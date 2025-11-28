@@ -1,0 +1,79 @@
+{
+  "_comment": "Demo fixtures for pre-loading product and packaging state. URLs must be valid external URLs (fal.ai, etc.) that won't expire during your demo.",
+  "product_create": {
+    "_comment": "Initial product shown after 'create' flow completes",
+    "prompt": "Einstein Funko Pop collectible figure",
+    "model_url": "https://v3b.fal.media/files/b/kangaroo/mBakDcPHYojI4lZuJ0kk6_model.glb",
+    "preview_images": [
+      "/labubudklego.jpeg"
+    ],
+    "no_background_images": [],
+    "trellis_quality": "balanced",
+    "trellis_images": [
+      "@file:demo/data/create/create_hero.txt",
+      "@file:demo/data/create/create_alt1.txt",
+      "@file:demo/data/create/create_alt2.txt",
+      "@file:demo/data/create/create_alt3.txt",
+      "@file:demo/data/create/create_alt4.txt"
+    ],
+    "preview_image_data_url": "@file:demo/data/create/create_hero.txt",
+    "trellis_multi_image": true,
+    "trellis_multiimage_algo": "stochastic",
+    "trellis_seed": 1337,
+    "trellis_last_generated_at": "2025-11-28T03:34:19Z"
+  },
+  "product_edit": {
+    "_comment": "Edited product shown after 'edit' flow completes",
+    "prompt": "Einstein Funko Pop with purple and white colors",
+    "model_url": "PASTE_YOUR_EDIT_MODEL_GLB_URL_HERE",
+    "preview_images": [
+      "PASTE_EDIT_PREVIEW_IMAGE_URL_HERE"
+    ],
+    "no_background_images": [],
+    "trellis_quality": "balanced",
+    "trellis_images": [
+      "@file:demo/data/edit/edit_view1.txt",
+      "@file:demo/data/edit/edit_view2.txt",
+      "@file:demo/data/edit/edit_view3.txt",
+      "@file:demo/data/edit/edit_view4.txt",
+      "@file:demo/data/edit/edit_view5.txt"
+    ],
+    "trellis_multi_image": true,
+    "trellis_multiimage_algo": "stochastic",
+    "trellis_seed": 1337
+  },
+  "packaging": {
+    "package_type": "box",
+    "dimensions": {
+      "width": 100.0,
+      "height": 150.0,
+      "depth": 100.0
+    },
+    "panel_textures": {
+      "front": {
+        "texture_url": "PASTE_FRONT_TEXTURE_URL_HERE",
+        "prompt": "Einstein themed packaging - front panel"
+      },
+      "back": {
+        "texture_url": "PASTE_BACK_TEXTURE_URL_HERE",
+        "prompt": "Einstein themed packaging - back panel"
+      },
+      "left": {
+        "texture_url": "PASTE_LEFT_TEXTURE_URL_HERE",
+        "prompt": "Einstein themed packaging - left panel"
+      },
+      "right": {
+        "texture_url": "PASTE_RIGHT_TEXTURE_URL_HERE",
+        "prompt": "Einstein themed packaging - right panel"
+      },
+      "top": {
+        "texture_url": "PASTE_TOP_TEXTURE_URL_HERE",
+        "prompt": "Einstein themed packaging - top panel"
+      },
+      "bottom": {
+        "texture_url": "PASTE_BOTTOM_TEXTURE_URL_HERE",
+        "prompt": "Einstein themed packaging - bottom panel"
+      }
+    }
+  }
+}

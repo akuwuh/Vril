@@ -16,13 +16,20 @@ from app.models.product_state import (
     clear_product_state,
     _utcnow,
 )
+from app.core.config import settings
 from app.services.product_pipeline import product_pipeline_service
+from app.services.demo_mock_pipeline import demo_mock_pipeline
 from app.services.file_export import (
     export_product_formats,
     get_export_file_path,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _is_demo_mock_mode() -> bool:
+    """Check if demo mock mode is enabled."""
+    return settings.DEMO_MOCK_MODE
 
 router = APIRouter(prefix="/product", tags=["product"])
 _background_tasks: Set[asyncio.Task] = set()
@@ -88,7 +95,9 @@ async def start_create(request: ProductCreateRequest):
     state = get_product_state()
     _ensure_not_busy(state)
 
-    logger.info("[product-router] Queuing create request")
+    is_mock = _is_demo_mock_mode()
+    logger.info(f"[product-router] Queuing create request {'(DEMO MOCK MODE)' if is_mock else ''}")
+    
     state.prompt = request.prompt
     state.latest_instruction = request.prompt
     state.mode = "create"
@@ -106,7 +115,12 @@ async def start_create(request: ProductCreateRequest):
     payload = ProductStatus(status="pending", progress=0, message="Preparing product generation")
     save_product_status(payload)
 
-    task = asyncio.create_task(product_pipeline_service.run_create(request.prompt, request.image_count))
+    # Use mock pipeline in demo mode, real pipeline otherwise
+    if is_mock:
+        task = asyncio.create_task(demo_mock_pipeline.run_mock_create(request.prompt, request.image_count))
+    else:
+        task = asyncio.create_task(product_pipeline_service.run_create(request.prompt, request.image_count))
+    
     _track_background_task(task)
     return payload.model_dump(mode="json")
 
@@ -117,10 +131,13 @@ async def start_edit(request: ProductEditRequest):
     state = get_product_state()
     _ensure_not_busy(state)
 
-    if not state.prompt or not state.images:
+    is_mock = _is_demo_mock_mode()
+    
+    # In mock mode, we don't require existing images (they come from fixtures)
+    if not is_mock and (not state.prompt or not state.images):
         raise HTTPException(status_code=400, detail="No base product available to edit")
 
-    logger.info("[product-router] Queuing edit request")
+    logger.info(f"[product-router] Queuing edit request {'(DEMO MOCK MODE)' if is_mock else ''}")
     state.latest_instruction = request.prompt
     state.mode = "edit"
     state.status = "pending"
@@ -132,7 +149,80 @@ async def start_edit(request: ProductEditRequest):
     payload = ProductStatus(status="pending", progress=0, message="Preparing edit request")
     save_product_status(payload)
 
-    task = asyncio.create_task(product_pipeline_service.run_edit(request.prompt))
+    # Use mock pipeline in demo mode, real pipeline otherwise
+    if is_mock:
+        task = asyncio.create_task(demo_mock_pipeline.run_mock_edit(request.prompt))
+    else:
+        task = asyncio.create_task(product_pipeline_service.run_edit(request.prompt))
+    _track_background_task(task)
+    return payload.model_dump(mode="json")
+
+
+class TrellisOnlyRequest(BaseModel):
+    """Request to generate 3D model from pre-generated images."""
+    prompt: str = Field(..., min_length=3, max_length=2000, description="Product description")
+    images: list[str] = Field(..., min_length=1, max_length=6, description="Pre-generated image URLs or base64 data URLs")
+    mode: str = Field("create", description="'create' for new product, 'edit' for modification")
+
+
+@router.post("/trellis-only")
+async def start_trellis_only(request: TrellisOnlyRequest):
+    """
+    Generate 3D model from PRE-GENERATED images (skip Gemini).
+    
+    Use this when you've generated images externally (e.g., AI Studio, DALL-E, etc.)
+    and just want to convert them to a 3D model using Trellis.
+    
+    Images can be:
+    - URLs: https://example.com/image.png
+    - Base64 data URLs: data:image/png;base64,iVBORw0...
+    
+    Example:
+    ```
+    curl -X POST http://localhost:8000/product/trellis-only \\
+      -H "Content-Type: application/json" \\
+      -d '{
+        "prompt": "Einstein Funko Pop",
+        "images": ["data:image/png;base64,..."],
+        "mode": "create"
+      }'
+    ```
+    """
+    state = get_product_state()
+    _ensure_not_busy(state)
+    
+    logger.info(f"[product-router] Queuing Trellis-only request with {len(request.images)} images")
+    
+    # Set up initial state
+    if request.mode == "create":
+        state.prompt = request.prompt
+        state.iterations = []
+    else:
+        state.latest_instruction = request.prompt
+    
+    state.mode = request.mode
+    state.status = "pending"
+    state.message = "Preparing 3D generation from pre-generated images"
+    state.in_progress = True
+    state.generation_started_at = _utcnow()
+    state.images = request.images
+    state.last_error = None
+    save_product_state(state)
+    
+    payload = ProductStatus(
+        status="pending",
+        progress=0,
+        message="Preparing 3D generation from pre-generated images"
+    )
+    save_product_status(payload)
+    
+    task = asyncio.create_task(
+        product_pipeline_service.run_trellis_only(
+            prompt=request.prompt,
+            images=request.images,
+            mode=request.mode,
+        )
+    )
     _track_background_task(task)
     return payload.model_dump(mode="json")
 

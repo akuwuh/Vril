@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Literal, Optional
 
 from app.integrations.trellis import trellis_service, TrellisOutput
 from app.core.redis import redis_service
@@ -12,21 +12,37 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/trellis", tags=["trellis"])
 STATUS_KEY = "trellis_status:current"
 
+TRELLIS_PRESETS = {
+    "balanced": {
+        "texture_size": 1024,
+        "mesh_simplify": 0.92,
+        "ss_sampling_steps": 14,
+        "ss_guidance_strength": 7.5,
+        "slat_sampling_steps": 14,
+        "slat_guidance_strength": 3.5,
+    },
+    "high_quality": {
+        "texture_size": 2048,
+        "mesh_simplify": 0.95,
+        "ss_sampling_steps": 20,
+        "ss_guidance_strength": 8.0,
+        "slat_sampling_steps": 20,
+        "slat_guidance_strength": 3.5,
+    },
+}
+
 class Generate3DRequest(BaseModel):
     images: List[str]
     seed: int = 1337
-    randomize_seed: bool = False
-    texture_size: int = 2048
-    mesh_simplify: float = 0.96
-    generate_color: bool = True
-    generate_normal: bool = False
-    generate_model: bool = True
-    save_gaussian_ply: bool = False
-    return_no_background: bool = True
-    ss_sampling_steps: int = 26
-    ss_guidance_strength: float = 8.0
-    slat_sampling_steps: int = 26
-    slat_guidance_strength: float = 3.2
+    texture_size: Optional[int] = None
+    mesh_simplify: Optional[float] = None
+    ss_sampling_steps: Optional[int] = None
+    ss_guidance_strength: Optional[float] = None
+    slat_sampling_steps: Optional[int] = None
+    slat_guidance_strength: Optional[float] = None
+    quality: Literal["balanced", "high_quality"] = "balanced"
+    use_multi_image: Optional[bool] = None
+    multiimage_algo: Literal["stochastic", "multidiffusion"] = "stochastic"
 
 @router.post("/generate", response_model=TrellisOutput)
 async def generate_3d_asset(request: Generate3DRequest):
@@ -55,21 +71,34 @@ async def generate_3d_asset(request: Generate3DRequest):
             }
         )
 
+        preset = TRELLIS_PRESETS.get(request.quality, TRELLIS_PRESETS["balanced"]).copy()
+        config = {**preset}
+        overrides = {
+            "texture_size": request.texture_size,
+            "mesh_simplify": request.mesh_simplify,
+            "ss_sampling_steps": request.ss_sampling_steps,
+            "ss_guidance_strength": request.ss_guidance_strength,
+            "slat_sampling_steps": request.slat_sampling_steps,
+            "slat_guidance_strength": request.slat_guidance_strength,
+        }
+        for key, value in overrides.items():
+            if value is not None:
+                config[key] = value
+
+        use_multi = request.use_multi_image if request.use_multi_image is not None else len(request.images) > 1
+        multi_algo = request.multiimage_algo
+
         output = trellis_service.generate_3d_asset(
             images=request.images,
             seed=request.seed,
-            randomize_seed=request.randomize_seed,
-            texture_size=request.texture_size,
-            mesh_simplify=request.mesh_simplify,
-            generate_color=request.generate_color,
-            generate_normal=request.generate_normal,
-            generate_model=request.generate_model,
-            save_gaussian_ply=request.save_gaussian_ply,
-            return_no_background=request.return_no_background,
-            ss_sampling_steps=request.ss_sampling_steps,
-            ss_guidance_strength=request.ss_guidance_strength,
-            slat_sampling_steps=request.slat_sampling_steps,
-            slat_guidance_strength=request.slat_guidance_strength
+            texture_size=config["texture_size"],
+            mesh_simplify=config["mesh_simplify"],
+            ss_sampling_steps=config["ss_sampling_steps"],
+            ss_guidance_strength=config["ss_guidance_strength"],
+            slat_sampling_steps=config["slat_sampling_steps"],
+            slat_guidance_strength=config["slat_guidance_strength"],
+            use_multi_image=use_multi,
+            multiimage_algo=multi_algo,
         )
         logger.info("Successfully generated 3D asset")
         _set_status(

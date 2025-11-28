@@ -32,42 +32,48 @@ class TrellisService:
         self,
         images: List[str],
         seed: int = 1337,
-        texture_size: int = 1024,
-        mesh_simplify: float = 0.92,
-        ss_sampling_steps: int = 14,
-        ss_guidance_strength: float = 7.5,
-        slat_sampling_steps: int = 14,
-        slat_guidance_strength: float = 3.5,
+        # DEMO MODE: Maximum quality settings (slower but best results)
+        texture_size: int = 2048,       # Max resolution textures (was 1024)
+        mesh_simplify: float = 0.95,    # 95% mesh retention for maximum detail (was 0.92)
+        ss_sampling_steps: int = 20,    # High quality geometry (was 14)
+        ss_guidance_strength: float = 8.0,  # Strong geometry fidelity (was 7.5)
+        slat_sampling_steps: int = 20,  # High quality latent details (was 14)
+        slat_guidance_strength: float = 4.0,  # Enhanced texture detail (was 3.5)
         progress_callback = None,
+        use_multi_image: bool = False,
+        multiimage_algo: str = "stochastic",
     ) -> TrellisOutput:
         """
         Generate a 3D asset from input images using Trellis via fal.ai.
         
-        Note: Only the first image is used as fal.ai's Trellis API accepts single images.
+        Supports single-image and multi-image workflows (set use_multi_image=True).
         
-        Parameters optimized for quality/speed balance (slightly favor quality):
-        - texture_size: 1536 (sweet spot - better than 1024, faster than 2048)
-        - mesh_simplify: 0.92 (92% mesh retention for better detail)
-        - ss_sampling_steps: 14 (good geometry quality, still faster than 16)
-        - slat_sampling_steps: 14 (better latent detail, matches ss_steps)
-        - ss_guidance_strength: 7.5 (maintain geometry fidelity)
-        - slat_guidance_strength: 3.5 (enhanced detail for better textures)
+        🎨 DEMO MODE - Parameters optimized for MAXIMUM QUALITY:
+        - texture_size: 2048 (max resolution for crisp textures)
+        - mesh_simplify: 0.95 (95% mesh retention for maximum geometric detail)
+        - ss_sampling_steps: 20 (high quality geometry reconstruction)
+        - ss_guidance_strength: 8.0 (strong adherence to input image)
+        - slat_sampling_steps: 20 (high quality latent space sampling)
+        - slat_guidance_strength: 4.0 (enhanced texture/detail fidelity)
         
-        Balance: ~30% faster than original 2048/16 settings with visibly better quality than 1024/12.
+        ⏱️  Expected time: 4-6 minutes per model (vs ~2-3 min with standard settings)
+        📦 Output quality: Significantly sharper textures and more detailed geometry
         """
         try:
             if not images or len(images) == 0:
                 raise ValueError("No images provided")
             
-            # Use only the first image (fal.ai accepts single image_url)
-            image_url = images[0]
-            if len(images) > 1:
-                logger.warning(f"Multiple images provided ({len(images)}), using only the first one")
+            use_multi = use_multi_image and len(images) > 1
             
             logger.info("=" * 80)
             logger.info("🎨 TRELLIS SERVICE - Submitting request to fal.ai")
-            logger.info(f"  Image URL length: {len(image_url)}")
-            logger.info(f"  Image URL preview: {image_url[:100]}...")
+            logger.info(f"  Images provided: {len(images)}")
+            if use_multi:
+                for idx, img in enumerate(images, 1):
+                    logger.info(f"    [{idx}] len={len(img)} preview={img[:100]}...")
+            else:
+                logger.info(f"  Image URL length: {len(images[0])}")
+                logger.info(f"  Image URL preview: {images[0][:100]}...")
             logger.info(f"  seed: {seed}")
             logger.info(f"  texture_size: {texture_size}")
             logger.info(f"  mesh_simplify: {mesh_simplify}")
@@ -85,18 +91,24 @@ class TrellisService:
             
             # Submit request and get result using fal_client.subscribe
             # This handles submission, polling, and result retrieval automatically
+            arguments = {
+                "seed": seed,
+                "texture_size": texture_size,
+                "mesh_simplify": mesh_simplify,
+                "ss_sampling_steps": ss_sampling_steps,
+                "ss_guidance_strength": ss_guidance_strength,
+                "slat_sampling_steps": slat_sampling_steps,
+                "slat_guidance_strength": slat_guidance_strength,
+            }
+            if use_multi:
+                arguments["image_urls"] = images
+                arguments["multiimage_algo"] = multiimage_algo
+            else:
+                arguments["image_url"] = images[0]
+            
             result = fal_client.subscribe(
                 "fal-ai/trellis",
-                arguments={
-                    "image_url": image_url,
-                    "seed": seed,
-                    "texture_size": texture_size,
-                    "mesh_simplify": mesh_simplify,
-                    "ss_sampling_steps": ss_sampling_steps,
-                    "ss_guidance_strength": ss_guidance_strength,
-                    "slat_sampling_steps": slat_sampling_steps,
-                    "slat_guidance_strength": slat_guidance_strength
-                },
+                arguments=arguments,
                 with_logs=True,
                 on_queue_update=lambda update: self._handle_queue_update(update)
             )
